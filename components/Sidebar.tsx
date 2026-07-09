@@ -1,0 +1,68 @@
+"use client";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Target, Package, Zap, Tag, Award } from "lucide-react";
+
+const nav = [
+  { href: "/", label: "Hunt List", icon: Target },
+  { href: "/inventory", label: "Inventory", icon: Package },
+  { href: "/scanner", label: "Market Scanner", icon: Zap },
+  { href: "/grading", label: "PSA Grading", icon: Award },
+  { href: "/listings", label: "Listings", icon: Tag },
+];
+
+export default function Sidebar() {
+  const path = usePathname();
+  return (
+    <aside className="fixed left-0 top-0 h-full w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-50">
+      {/* Logo */}
+      <div className="p-6 border-b border-gray-800">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-lg font-bold text-gray-900">
+            🃏
+          </div>
+          <div>
+            <div className="font-bold text-white text-sm leading-tight">CardFlip AI</div>
+            <div className="text-xs text-gray-500">Trading Intelligence</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 p-4 space-y-1">
+        {nav.map(({ href, label, icon: Icon }) => {
+          const active = path === href;
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                active
+                  ? "bg-yellow-400/10 text-yellow-400 border border-yellow-400/20"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800"
+              }`}
+            >
+              <Icon size={16} />
+              {label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* AI Agent Status */}
+      <div className="p-4 border-t border-gray-800">
+        <div className="bg-green-950/60 border border-green-800/40 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-green-400 pulse-dot inline-block" />
+            <span className="text-green-400 text-xs font-semibold">AI Agent Active</span>
+          </div>
+          <div className="text-gray-400 text-xs">Scanning 14 cards · 3 markets</div>
+          <div className="flex items-center gap-1 mt-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
+            <span className="text-blue-400 text-xs">Live Markets</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
