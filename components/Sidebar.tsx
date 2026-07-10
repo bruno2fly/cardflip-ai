@@ -1,18 +1,35 @@
 "use client";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Target, Package, Zap, Tag, Award } from "lucide-react";
+import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen } from "lucide-react";
 
 const nav = [
   { href: "/", label: "Hunt List", icon: Target },
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/scanner", label: "Market Scanner", icon: Zap },
-  { href: "/grading", label: "PSA Grading", icon: Award },
+  { href: "/grading", label: "PSA Grading", icon: Award, starterLocked: true },
+  { href: "/lot", label: "Lot Analyzer", icon: Boxes },
   { href: "/listings", label: "Listings", icon: Tag },
+  { href: "/guide", label: "Guide", icon: BookOpen },
 ];
 
 export default function Sidebar() {
   const path = usePathname();
+  const [starterMode, setStarterMode] = useState(false);
+
+  // Track Starter Mode (set on the Hunt List page) without a reload
+  useEffect(() => {
+    const read = () => setStarterMode(localStorage.getItem("cardflip-starter-mode") === "1");
+    read();
+    window.addEventListener("cardflip-starter-change", read);
+    window.addEventListener("storage", read);
+    return () => {
+      window.removeEventListener("cardflip-starter-change", read);
+      window.removeEventListener("storage", read);
+    };
+  }, []);
+
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-50">
       {/* Logo */}
@@ -30,8 +47,24 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 p-4 space-y-1">
-        {nav.map(({ href, label, icon: Icon }) => {
+        {nav.map(({ href, label, icon: Icon, starterLocked }) => {
           const active = path === href;
+
+          // Starter Mode locks grading: no grading until the bankroll is built
+          if (starterLocked && starterMode) {
+            return (
+              <div
+                key={href}
+                title="Unlock after 30 days"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 cursor-not-allowed select-none"
+              >
+                <Icon size={16} />
+                {label}
+                <Lock size={12} className="ml-auto" />
+              </div>
+            );
+          }
+
           return (
             <Link
               key={href}
@@ -56,7 +89,7 @@ export default function Sidebar() {
             <span className="w-2 h-2 rounded-full bg-green-400 pulse-dot inline-block" />
             <span className="text-green-400 text-xs font-semibold">AI Agent Active</span>
           </div>
-          <div className="text-gray-400 text-xs">Scanning 14 cards · 3 markets</div>
+          <div className="text-gray-400 text-xs">Scanning live markets</div>
           <div className="flex items-center gap-1 mt-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
             <span className="text-blue-400 text-xs">Live Markets</span>

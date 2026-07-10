@@ -3,7 +3,8 @@ import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { inventory as mockInventory } from "@/lib/data";
 import { supabase, DbCard } from "@/lib/supabase";
-import { Search, Zap, RefreshCw, ExternalLink, AlertTriangle, Eye } from "lucide-react";
+import { velocityFor, dealScore } from "@/lib/hunt";
+import { Search, Zap, RefreshCw, ExternalLink, AlertTriangle, Eye, Radar } from "lucide-react";
 
 const FEE_RATE = 0.13;        // 13% marketplace fees
 const SHIPPING_COST = 5;      // shipping to buyer
@@ -61,7 +62,31 @@ export default function Scanner() {
   const [cards, setCards] = useState<ScanCard[]>([]);
   const [prices, setPrices] = useState<Record<string, LivePrices>>({});
   const [refreshing, setRefreshing] = useState(false);
+  const [scan, setScan] = useState<{ running: boolean; message: string | null; ok: boolean }>({ running: false, message: null, ok: true });
   const usingSupabase = supabase !== null;
+
+  // Manual trigger for the hourly email-alert scan (/api/cron/scan)
+  async function runScanNow() {
+    setScan({ running: true, message: null, ok: true });
+    try {
+      const res = await fetch("/api/cron/scan");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Scan failed");
+      const bits = [
+        `Scanned ${json.scanned} cards`,
+        `${json.hot} hot`,
+        json.emailed
+          ? `email sent for ${json.alerted}`
+          : json.hot > 0
+            ? `no email (${json.emailDetail})`
+            : "no email needed",
+      ];
+      if (json.skippedDuplicates > 0) bits.push(`${json.skippedDuplicates} skipped as duplicates`);
+      setScan({ running: false, message: bits.join(" · "), ok: true });
+    } catch (err) {
+      setScan({ running: false, message: (err as Error).message, ok: false });
+    }
+  }
 
   // Load the card list (Supabase, falling back to mock data)
   useEffect(() => {
@@ -155,6 +180,14 @@ export default function Scanner() {
             </div>
           )}
           <button
+            onClick={runScanNow}
+            disabled={scan.running}
+            className="flex items-center gap-2 bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/30 text-yellow-400 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors disabled:opacity-50"
+            title="Runs the hourly email-alert scan right now"
+          >
+            <Radar size={13} className={scan.running ? "animate-spin" : ""} /> Run Alert Scan
+          </button>
+          <button
             onClick={() => fetchPrices(cards)}
             disabled={refreshing}
             className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 text-xs font-medium px-3 py-1.5 rounded-full transition-colors disabled:opacity-50"
@@ -163,6 +196,17 @@ export default function Scanner() {
           </button>
         </div>
       </div>
+
+      {/* Alert scan result */}
+      {scan.message && (
+        <div className={`text-xs rounded-lg px-4 py-2.5 border ${
+          scan.ok
+            ? "bg-yellow-950/40 border-yellow-800/40 text-yellow-300"
+            : "bg-red-950/40 border-red-800/40 text-red-300"
+        }`}>
+          {scan.ok ? "Alert scan complete: " : "Alert scan failed: "}{scan.message}
+        </div>
+      )}
 
       {!usingSupabase && (
         <div className="bg-orange-950/40 border border-orange-800/40 text-orange-300 text-xs rounded-lg px-4 py-2.5">
@@ -189,10 +233,15 @@ export default function Scanner() {
           const hasData = p.status === "ok" && p.market != null && card.bought > 0;
           const verdict: Verdict | null = hasData ? verdictFor(card.bought, p.market!) : null;
           const marginPct = hasData ? ((p.market! - card.bought) / card.bought) * 100 : null;
+          // Deal score: net profit (fees + shipping) and net ROI vs your cost
+          const netProfit = hasData ? p.market! * (1 - FEE_RATE) - FLAT_COSTS - card.bought : 0;
+          const netRoi = hasData ? (netProfit / card.bought) * 100 : 0;
+          const deal = hasData ? dealScore(netRoi, netProfit, velocityFor(p.market!).tier) : null;
 
-          const priceCols: { label: string; subtitle?: string; value: number | null | undefined; cls: string }[] = [
+          const priceCols: { label: string; value: number | null | undefined; cls: string }[] = [
             { label: "Cheapest Listed", value: p.low, cls: "text-blue-400" },
-            { label: "Avg Sell Price", subtitle: "recent TCGPlayer sales", value: p.market, cls: "text-yellow-400" },
+            { label: "Average Sell Price", value: p.market, cls: "text-yellow-400" },
+            { label: "Top Listing", value: p.high, cls: "text-pink-400" },
           ];
 
           return (
@@ -215,6 +264,12 @@ export default function Scanner() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-white text-sm">{card.name}</span>
                     <span className="text-gray-500 text-xs">{card.set}</span>
+
+                    {deal && (
+                      <span className={`border text-[11px] font-bold px-2 py-0.5 rounded-full ${deal.cls}`}>
+                        {deal.label}
+                      </span>
+                    )}
 
                     {verdict === "buy" && (
                       <span className="flex items-center gap-1 bg-green-950/80 border border-green-700/50 text-green-400 text-xs font-bold px-2 py-0.5 rounded-full">
@@ -266,10 +321,9 @@ export default function Scanner() {
 
                   {/* Live prices (info only — calculations use Average Sell Price) */}
                   <div className="flex gap-4 mt-3 flex-wrap">
-                    {priceCols.map(({ label, subtitle, value, cls }) => (
+                    {priceCols.map(({ label, value, cls }) => (
                       <div key={label} className="text-center">
-                        <div className={`text-xs font-medium mb-0.5 ${cls}`}>{label}</div>
-                        {subtitle && <div className="text-gray-600 text-[10px] mb-1">{subtitle}</div>}
+                        <div className={`text-xs font-medium mb-1 ${cls}`}>{label}</div>
                         {p.status === "loading" ? (
                           <div className="h-5 w-14 bg-gray-800 rounded animate-pulse mx-auto" />
                         ) : (

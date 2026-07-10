@@ -102,11 +102,10 @@ export default function Inventory() {
       const controller = new AbortController();
       abortRef.current = controller;
       try {
+        // Server-side proxy so the POKEMONTCG_API_KEY is used — direct
+        // browser calls get rate-limited and silently fail in production.
         const q = encodeURIComponent(`name:*${query.trim()}*`);
-        const res = await fetch(
-          `https://api.pokemontcg.io/v2/cards?q=${q}&pageSize=12&orderBy=-set.releaseDate&select=id,name,set,number,rarity,images`,
-          { signal: controller.signal }
-        );
+        const res = await fetch(`/api/search?q=${q}&pageSize=12`, { signal: controller.signal });
         if (!res.ok) throw new Error(`Search failed (${res.status})`);
         const json = await res.json();
         setResults(json.data ?? []);
