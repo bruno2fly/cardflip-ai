@@ -1,0 +1,77 @@
+/**
+ * Upcoming Pokemon set releases from the Pokemon TCG API.
+ * Shared by /api/releases (Packs page tab) and /api/cron/releases (email alerts).
+ */
+
+export type ReleaseSet = {
+  id: string;
+  name: string;
+  series: string;
+  releaseDate: string;   // YYYY/MM/DD (API format)
+  logoUrl: string | null;
+  symbolUrl: string | null;
+  daysUntil?: number;    // set on upcoming releases
+  daysAgo?: number;      // set on recently released
+};
+
+export type Releases = { upcoming: ReleaseSet[]; recent: ReleaseSet[] };
+
+const SETS_API = "https://api.pokemontcg.io/v2/sets";
+const HORIZON_DAYS = 120;   // look ahead this far
+const RECENT_DAYS = 7;      // "just dropped" window — still relevant for pre-order flips
+
+type RawSet = {
+  id: string;
+  name: string;
+  series: string;
+  releaseDate: string;
+  images?: { logo?: string; symbol?: string };
+};
+
+export async function getReleases(): Promise<Releases> {
+  const headers: Record<string, string> = {};
+  if (process.env.POKEMONTCG_API_KEY) headers["X-Api-Key"] = process.env.POKEMONTCG_API_KEY;
+
+  // Newest-first so future + fresh sets are on page 1 (ascending would return 1999 sets)
+  const params = new URLSearchParams({
+    orderBy: "-releaseDate",
+    pageSize: "50",
+    select: "id,name,series,releaseDate,images",
+  });
+  const res = await fetch(`${SETS_API}?${params}`, {
+    headers,
+    next: { revalidate: 21600 }, // cache 6 hours
+  });
+  if (!res.ok) throw new Error(`Pokemon TCG API responded ${res.status}`);
+  const json = await res.json();
+
+  const now = Date.now();
+  const dayMs = 86_400_000;
+  const upcoming: ReleaseSet[] = [];
+  const recent: ReleaseSet[] = [];
+
+  for (const s of (json.data ?? []) as RawSet[]) {
+    const date = new Date(s.releaseDate).getTime();
+    if (isNaN(date)) continue;
+    const diffDays = Math.ceil((date - now) / dayMs);
+
+    const base: ReleaseSet = {
+      id: s.id,
+      name: s.name,
+      series: s.series,
+      releaseDate: s.releaseDate,
+      logoUrl: s.images?.logo ?? null,
+      symbolUrl: s.images?.symbol ?? null,
+    };
+
+    if (diffDays >= 0 && diffDays <= HORIZON_DAYS) {
+      upcoming.push({ ...base, daysUntil: diffDays });
+    } else if (diffDays < 0 && diffDays >= -RECENT_DAYS) {
+      recent.push({ ...base, daysAgo: Math.abs(diffDays) });
+    }
+  }
+
+  upcoming.sort((a, b) => (a.daysUntil ?? 0) - (b.daysUntil ?? 0));
+  recent.sort((a, b) => (a.daysAgo ?? 0) - (b.daysAgo ?? 0));
+  return { upcoming, recent };
+}
