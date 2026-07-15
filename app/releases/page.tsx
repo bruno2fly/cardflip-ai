@@ -1,7 +1,16 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
-import { Bell, BellOff, Loader2, CalendarDays } from "lucide-react";
+import { Bell, BellOff, Loader2, CalendarDays, Sparkles, ExternalLink, CheckCircle2 } from "lucide-react";
+
+type LeakIntel = {
+  setName: string;
+  releaseDate: string | null;
+  source: string;
+  sourceUrl: string;
+  foundAt: number;
+  detail?: string;
+};
 
 type ReleaseSet = {
   id: string;
@@ -17,7 +26,7 @@ type ReleaseSet = {
 type ReleasesState =
   | { status: "loading" }
   | { status: "error" }
-  | { status: "ok"; upcoming: ReleaseSet[]; recent: ReleaseSet[] };
+  | { status: "ok"; upcoming: ReleaseSet[]; recent: ReleaseSet[]; intel: LeakIntel[] };
 
 function daysBadgeCls(days: number): string {
   if (days <= 7) return "bg-red-950/60 border-red-700/50 text-red-400";
@@ -80,7 +89,7 @@ export default function UpcomingReleases() {
       const loadedAlerts: Record<string, boolean> = {};
       for (const s of all) loadedAlerts[s.id] = localStorage.getItem(`release-alert-${s.id}`) === "1";
       setAlerts(loadedAlerts);
-      setReleases({ status: "ok", upcoming: json.upcoming, recent: json.recent });
+      setReleases({ status: "ok", upcoming: json.upcoming, recent: json.recent, intel: json.intel ?? [] });
     } catch {
       setReleases({ status: "error" });
     }
@@ -125,11 +134,64 @@ export default function UpcomingReleases() {
           <button onClick={loadReleases} className="underline hover:text-white">Try again</button>
         </div>
       )}
+      {/* Early Intel — unofficial reveals from Serebii, ahead of the official API */}
+      {releases.status === "ok" && releases.intel.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-purple-300 flex items-center gap-1.5">
+              <Sparkles size={14} /> 🔮 Early Intel
+            </h3>
+            <span className="bg-purple-950/60 border border-purple-700/40 text-purple-400 text-[10px] font-medium px-2 py-0.5 rounded-full">
+              unofficial · sourced from Serebii
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {releases.intel.map(item => (
+              <div key={item.setName} className="bg-gray-900 border border-purple-700/50 rounded-xl p-4 flex items-center gap-4">
+                <div className="flex-shrink-0 w-16 h-16 rounded-xl border bg-purple-950/60 border-purple-700/40 text-purple-400 flex flex-col items-center justify-center">
+                  <Sparkles size={20} />
+                  <span className="text-[9px] font-medium mt-1 uppercase tracking-wide">Intel</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-white font-semibold text-sm leading-tight">{item.setName}</div>
+                  <div className="text-gray-500 text-xs mt-0.5">
+                    {item.releaseDate ? `releases ${item.releaseDate}` : "release date not announced yet"}
+                  </div>
+                  {item.detail && <div className="text-purple-400/80 text-[11px] mt-0.5">{item.detail}</div>}
+                </div>
+                <a
+                  href={item.sourceUrl}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex-shrink-0 flex items-center gap-1 text-[11px] font-semibold px-3 py-1.5 rounded-full border bg-purple-950/40 border-purple-700/40 text-purple-400 hover:text-white transition-colors"
+                >
+                  <ExternalLink size={10} /> Serebii
+                </a>
+              </div>
+            ))}
+          </div>
+          <p className="text-gray-600 text-xs">
+            Not yet in the official Pokemon TCG database — this is Jason&apos;s head start. Once a set shows up officially, it moves to Confirmed below.
+          </p>
+        </div>
+      )}
+
+      {/* Confirmed — official Pokemon TCG API */}
+      {releases.status === "ok" && (releaseGroups.length > 0 || releases.intel.length > 0) && (
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-green-300 flex items-center gap-1.5">
+            <CheckCircle2 size={14} /> ✅ Confirmed
+          </h3>
+          <span className="bg-green-950/60 border border-green-700/40 text-green-400 text-[10px] font-medium px-2 py-0.5 rounded-full">
+            official Pokemon TCG API
+          </span>
+        </div>
+      )}
+
       {releases.status === "ok" && releaseGroups.length === 0 && (
         <div className="text-center py-16 text-gray-500 text-sm space-y-1">
           <CalendarDays size={28} className="mx-auto mb-2 opacity-40" />
-          <p>No upcoming sets announced in the next 120 days.</p>
-          <p>New sets usually get announced 2–3 months out — check back soon.</p>
+          <p>No confirmed sets in the official database for the next 120 days.</p>
+          <p>The official API often lags weeks behind — the Early Intel above is the head start.</p>
         </div>
       )}
       {releaseGroups.map(group => (
