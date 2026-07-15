@@ -75,11 +75,23 @@ export async function GET() {
     }
 
     // only sets the user explicitly opted into ("Set Alert" toggle ON)
-    const { data: prefs } = await supabase
+    const { data: prefs, error: prefsError } = await supabase
       .from("release_alert_prefs")
       .select("set_id, enabled")
-      .in("set_id", imminent.map(s => s.id));
-    const optedIn = new Set((prefs ?? []).filter(p => p.enabled).map(p => p.set_id));
+      .in("set_id", imminent.map(s => s.id))
+      .eq("enabled", true);
+
+    if (prefsError) {
+      return NextResponse.json({
+        checked: upcoming.length,
+        imminent: imminent.length,
+        optedIn: 0,
+        alerted: 0,
+        skipped: `Release alert prefs unavailable - defaulting to no emails: ${prefsError.message}`,
+      });
+    }
+
+    const optedIn = new Set((prefs ?? []).map(p => p.set_id));
     const wanted = imminent.filter(s => optedIn.has(s.id));
 
     if (wanted.length === 0) {
@@ -116,6 +128,7 @@ export async function GET() {
       checked: upcoming.length,
       imminent: imminent.length,
       optedIn: wanted.length,
+      skippedNotOptedIn: imminent.length - wanted.length,
       skippedAlreadyAlerted: wanted.length - toAlert.length,
       alerted,
       emailConfigured: Boolean(process.env.RESEND_API_KEY && process.env.ALERT_EMAIL),
