@@ -6,10 +6,12 @@ import { Package2, Lightbulb, CheckCircle2, AlertTriangle, XCircle, ExternalLink
 const FEE_RATE = 0.13;        // 13% marketplace fees
 const SEALED_SHIPPING = 8;    // sealed product ships heavier — padded box + tracking
 
-// Best Buy live stock (the only retailer with a public stock API —
-// Walmart/Target/Pokemon Center are manual-check links, no fake badges)
+// Live stock: Best Buy (official API) + Target (unofficial RedSky — often
+// blocked, degrades to Unknown). Walmart/Pokemon Center have no API at all,
+// so those stay manual-check links with no fake badges.
 type StockState = "in-stock" | "out-of-stock" | "unknown";
 type StockInfo = { status: StockState; url: string | null };
+type StockMaps = { bestbuy: Record<string, StockInfo>; target: Record<string, StockInfo> };
 
 const stockBadge: Record<StockState, { label: string; cls: string }> = {
   "in-stock": { label: "● In Stock", cls: "text-green-400" },
@@ -57,7 +59,7 @@ function verdictFor(roi: number): Verdict {
 export default function SealedTracker() {
   const [filter, setFilter] = useState<TypeFilter>("All");
   const [prices, setPrices] = useState<Record<string, string>>({});
-  const [stock, setStock] = useState<Record<string, StockInfo>>({});
+  const [stock, setStock] = useState<StockMaps>({ bestbuy: {}, target: {} });
 
   // Market prices persist per product in localStorage (pack-price-{id})
   useEffect(() => {
@@ -69,17 +71,20 @@ export default function SealedTracker() {
     setPrices(loaded);
   }, []);
 
-  // Best Buy live stock — server-cached 15 min; best-effort, no spinner needed
+  // Live stock (Best Buy + Target) — server-cached 15 min; best-effort
   useEffect(() => {
     (async () => {
       try {
         const res = await fetch("/api/stock");
         const json = await res.json();
-        if (!res.ok || !json.statuses) return;
-        const map: Record<string, StockInfo> = {};
-        for (const s of json.statuses) map[s.productId] = { status: s.status, url: s.url };
-        setStock(map);
-      } catch { /* badge just stays "Unknown" */ }
+        if (!res.ok) return;
+        const toMap = (statuses?: { productId: string; status: StockState; url: string | null }[]) => {
+          const map: Record<string, StockInfo> = {};
+          for (const s of statuses ?? []) map[s.productId] = { status: s.status, url: s.url };
+          return map;
+        };
+        setStock({ bestbuy: toMap(json.bestbuy?.statuses), target: toMap(json.target?.statuses) });
+      } catch { /* badges just stay "Unknown" */ }
     })();
   }, []);
 
@@ -221,15 +226,25 @@ export default function SealedTracker() {
                     >
                       Walmart
                     </a>
-                    <a
-                      href={product.targetUrl}
-                      target="_blank" rel="noopener noreferrer"
-                      className="flex items-center justify-center bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-[11px] font-semibold px-2 py-2 rounded-lg transition-colors"
-                    >
-                      Target
-                    </a>
                     {(() => {
-                      const s = stock[product.id] ?? { status: "unknown" as const, url: null };
+                      const s = stock.target[product.id] ?? { status: "unknown" as const, url: null };
+                      const badge = stockBadge[s.status];
+                      return (
+                        <a
+                          href={s.url ?? product.targetUrl}
+                          target="_blank" rel="noopener noreferrer"
+                          title={`Target: ${s.status.replace(/-/g, " ")} (live check — unofficial API, may show Unknown)`}
+                          className={`flex flex-col items-center justify-center bg-red-500/10 hover:bg-red-500/20 border text-red-400 text-[11px] font-semibold px-2 py-1.5 rounded-lg transition-colors ${
+                            s.status === "in-stock" ? "border-green-500/50" : "border-red-500/30"
+                          }`}
+                        >
+                          Target
+                          <span className={`text-[9px] font-medium leading-tight ${badge.cls}`}>{badge.label}</span>
+                        </a>
+                      );
+                    })()}
+                    {(() => {
+                      const s = stock.bestbuy[product.id] ?? { status: "unknown" as const, url: null };
                       const badge = stockBadge[s.status];
                       return (
                         <a
