@@ -1,12 +1,14 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { listings as mockListings } from "@/lib/data";
-import { supabase, DbCard, daysSince } from "@/lib/supabase";
-import { AlertTriangle, CheckCircle2, Clock, Undo2 } from "lucide-react";
+import { supabase, DbCard, DbSealedItem, daysSince } from "@/lib/supabase";
+import { AlertTriangle, CheckCircle2, Clock, Undo2, Package2 } from "lucide-react";
 
 type Listing = {
   id: string | number;
+  kind: "card" | "sealed";   // sealed rows live in sealed_inventory
   name: string;
+  qty?: number;
   platform: string;
   asking: number;
   cost: number;
@@ -15,15 +17,15 @@ type Listing = {
   status: "active" | "sold";
 };
 
+const SEALED_SHIPPING = 8; // sealed ships heavier than a card in a sleeve
+
 function fmt(n: number) { return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function pct(cost: number, asking: number) {
+function estProfit(cost: number, asking: number, kind: "card" | "sealed" = "card") {
   const fees = asking * 0.13;
-  const profit = asking - fees - cost;
-  return cost > 0 ? ((profit / cost) * 100).toFixed(1) : "0.0";
+  return asking - fees - (kind === "sealed" ? SEALED_SHIPPING : 0) - cost;
 }
-function estProfit(cost: number, asking: number) {
-  const fees = asking * 0.13;
-  return asking - fees - cost;
+function pct(cost: number, asking: number, kind: "card" | "sealed" = "card") {
+  return cost > 0 ? ((estProfit(cost, asking, kind) / cost) * 100).toFixed(1) : "0.0";
 }
 
 const platformColors: Record<string, string> = {
@@ -42,14 +44,16 @@ export default function Listings() {
 
   const load = useCallback(async () => {
     if (supabase) {
-      const { data, error } = await supabase
-        .from("cards")
-        .select("*")
-        .in("status", ["active", "sold"])
-        .order("listed_at", { ascending: false });
-      if (!error && data) {
-        setListings((data as DbCard[]).map(r => ({
+      // single cards + sealed product in one view — one place to check what's for sale
+      const [cardsRes, sealedRes] = await Promise.all([
+        supabase.from("cards").select("*").in("status", ["active", "sold"]).order("listed_at", { ascending: false }),
+        supabase.from("sealed_inventory").select("*").in("status", ["listed", "sold"]).order("listed_at", { ascending: false }),
+      ]);
+      const rows: Listing[] = [];
+      if (!cardsRes.error && cardsRes.data) {
+        rows.push(...(cardsRes.data as DbCard[]).map(r => ({
           id: r.id,
+          kind: "card" as const,
           name: r.condition && r.condition !== "Raw NM" ? `${r.name} ${r.condition}` : r.name,
           platform: r.platform ?? "—",
           asking: Number(r.asking ?? 0),
@@ -58,26 +62,56 @@ export default function Listings() {
           watchers: r.watchers,
           status: r.status as "active" | "sold",
         })));
+      }
+      if (!sealedRes.error && sealedRes.data) {
+        rows.push(...(sealedRes.data as DbSealedItem[]).map(r => ({
+          id: r.id,
+          kind: "sealed" as const,
+          name: r.product_name,
+          qty: r.qty,
+          platform: r.platform ?? "—",
+          asking: Number(r.asking_price ?? r.sold_price ?? 0),
+          cost: Number(r.bought_price),
+          daysListed: daysSince(r.listed_at),
+          watchers: 0,
+          status: r.status === "sold" ? ("sold" as const) : ("active" as const),
+        })));
+      }
+      if (!cardsRes.error || !sealedRes.error) {
+        rows.sort((a, b) => a.daysListed - b.daysListed);
+        setListings(rows);
         return;
       }
     }
-    setListings(mockListings as Listing[]);
+    setListings((mockListings as Omit<Listing, "kind">[]).map(l => ({ ...l, kind: "card" as const })));
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  async function markSold(id: string | number) {
+  async function markSold(listing: Listing) {
     if (!supabase) return;
-    setBusyId(id);
-    await supabase.from("cards").update({ status: "sold" }).eq("id", id);
+    setBusyId(listing.id);
+    if (listing.kind === "sealed") {
+      await supabase.from("sealed_inventory").update({
+        status: "sold", sold_price: listing.asking, sold_at: new Date().toISOString(),
+      }).eq("id", listing.id);
+    } else {
+      await supabase.from("cards").update({ status: "sold" }).eq("id", listing.id);
+    }
     await load();
     setBusyId(null);
   }
 
-  async function relist(id: string | number) {
+  async function relist(listing: Listing) {
     if (!supabase) return;
-    setBusyId(id);
-    await supabase.from("cards").update({ status: "active", listed_at: new Date().toISOString() }).eq("id", id);
+    setBusyId(listing.id);
+    if (listing.kind === "sealed") {
+      await supabase.from("sealed_inventory").update({
+        status: "listed", listed_at: new Date().toISOString(), sold_price: null, sold_at: null,
+      }).eq("id", listing.id);
+    } else {
+      await supabase.from("cards").update({ status: "active", listed_at: new Date().toISOString() }).eq("id", listing.id);
+    }
     await load();
     setBusyId(null);
   }
@@ -136,7 +170,7 @@ export default function Listings() {
       {/* Listings table */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="grid grid-cols-12 gap-4 px-5 py-3 text-xs text-gray-500 border-b border-gray-800 font-medium uppercase tracking-wide">
-          <div className="col-span-3">Card</div>
+          <div className="col-span-3">Item</div>
           <div className="col-span-2">Platform</div>
           <div className="col-span-1 text-right">Asking</div>
           <div className="col-span-1 text-right">Est. Profit</div>
@@ -148,14 +182,21 @@ export default function Listings() {
         </div>
         <div className="divide-y divide-gray-800">
           {visible.map(listing => {
-            const profit = estProfit(listing.cost, listing.asking);
-            const marginPct = pct(listing.cost, listing.asking);
+            const profit = estProfit(listing.cost, listing.asking, listing.kind);
+            const marginPct = pct(listing.cost, listing.asking, listing.kind);
             const stale = listing.daysListed >= 14 && listing.status === "active";
 
             return (
               <div key={listing.id} className={`grid grid-cols-12 gap-4 px-5 py-4 text-sm items-center hover:bg-gray-800/40 transition-colors ${stale ? "bg-orange-950/10" : ""}`}>
                 <div className="col-span-3">
-                  <div className="font-medium text-white">{listing.name}</div>
+                  <div className="font-medium text-white flex items-center gap-2 flex-wrap">
+                    {listing.name}
+                    {listing.kind === "sealed" && (
+                      <span className="inline-flex items-center gap-1 bg-purple-950/60 border border-purple-700/40 text-purple-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                        <Package2 size={9} /> SEALED{listing.qty && listing.qty > 1 ? ` ×${listing.qty}` : ""}
+                      </span>
+                    )}
+                  </div>
                   {stale && (
                     <div className="flex items-center gap-1 mt-0.5">
                       <AlertTriangle size={11} className="text-orange-400" />
@@ -204,7 +245,7 @@ export default function Listings() {
                 <div className="col-span-1 text-center">
                   {usingSupabase && (listing.status === "active" ? (
                     <button
-                      onClick={() => markSold(listing.id)}
+                      onClick={() => markSold(listing)}
                       disabled={busyId === listing.id}
                       className="text-xs font-medium text-gray-400 hover:text-green-400 border border-gray-700 hover:border-green-700/50 rounded-md px-2 py-1 transition-colors disabled:opacity-50"
                     >
@@ -212,7 +253,7 @@ export default function Listings() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => relist(listing.id)}
+                      onClick={() => relist(listing)}
                       disabled={busyId === listing.id}
                       className="text-xs font-medium text-gray-400 hover:text-yellow-400 border border-gray-700 hover:border-yellow-700/50 rounded-md px-2 py-1 transition-colors disabled:opacity-50 inline-flex items-center gap-1"
                     >

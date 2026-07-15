@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays } from "lucide-react";
+import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays, Archive } from "lucide-react";
 
 type NavItem = {
   href: string;
@@ -18,6 +18,7 @@ const sections: NavSection[] = [
     title: "Sealed Product",
     items: [
       { href: "/", label: "Sealed Products", icon: Package2 },
+      { href: "/sealed-inventory", label: "Sealed Inventory", icon: Archive },
       { href: "/releases", label: "Upcoming Releases", icon: CalendarDays },
     ],
   },

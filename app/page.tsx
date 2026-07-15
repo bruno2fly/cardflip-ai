@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { PRODUCTS, ProductType, Hotness } from "@/lib/products";
-import { Package2, Lightbulb, CheckCircle2, AlertTriangle, XCircle, ExternalLink } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { Package2, Lightbulb, CheckCircle2, AlertTriangle, XCircle, ExternalLink, Archive, Loader2, X } from "lucide-react";
 
 const FEE_RATE = 0.13;        // 13% marketplace fees
 const SEALED_SHIPPING = 8;    // sealed product ships heavier — padded box + tracking
@@ -83,6 +85,9 @@ export default function SealedTracker() {
   const [stock, setStock] = useState<StockMaps>({ bestbuy: {}, target: {} });
   const [livePrices, setLivePrices] = useState<Record<string, { market: number; source: "tcgapi" | "tcgplayer-est" }>>({});
   const [lightbox, setLightbox] = useState<{ name: string; imageUrl: string } | null>(null);
+  const [addForm, setAddForm] = useState<{ productId: string; qty: string; paid: string } | null>(null);
+  const [addSaving, setAddSaving] = useState(false);
+  const [added, setAdded] = useState<Record<string, boolean>>({});
 
   // Esc closes the image lightbox
   useEffect(() => {
@@ -143,6 +148,29 @@ export default function SealedTracker() {
       } catch { /* manual input remains the source */ }
     })();
   }, []);
+
+  // Log an actual purchase into sealed_inventory (the sealed flip loop starts here)
+  async function saveToInventory() {
+    if (!supabase || !addForm) return;
+    const qty = parseInt(addForm.qty, 10);
+    const paid = parseFloat(addForm.paid);
+    if (isNaN(qty) || qty < 1 || isNaN(paid) || paid <= 0) return;
+    const product = PRODUCTS.find(p => p.id === addForm.productId);
+    if (!product) return;
+    setAddSaving(true);
+    const { error } = await supabase.from("sealed_inventory").insert({
+      product_id: product.id,
+      product_name: product.name,
+      qty,
+      bought_price: paid,
+      current_market: livePrices[product.id]?.market ?? seedFromNotes(product.notes) ?? product.msrp,
+    });
+    setAddSaving(false);
+    if (!error) {
+      setAdded(prev => ({ ...prev, [product.id]: true }));
+      setAddForm(null);
+    }
+  }
 
   const visible = filter === "All" ? PRODUCTS : PRODUCTS.filter(p => p.type === filter);
 
@@ -368,6 +396,53 @@ export default function SealedTracker() {
                     </a>
                   </div>
                 </div>
+                {/* Bought it? Log it — starts the sealed flip loop */}
+                {addForm?.productId === product.id ? (
+                  <div className="flex items-end gap-2 flex-wrap bg-gray-950/60 border border-green-700/30 rounded-lg p-3">
+                    <div>
+                      <div className="text-gray-500 text-[11px] mb-1">Qty</div>
+                      <input
+                        type="number" min="1" step="1" autoFocus
+                        value={addForm.qty}
+                        onChange={e => setAddForm({ ...addForm, qty: e.target.value })}
+                        className="w-16 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white tabular focus:outline-none focus:border-green-500/50"
+                      />
+                    </div>
+                    <div>
+                      <div className="text-gray-500 text-[11px] mb-1">Paid $ / unit</div>
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={addForm.paid}
+                        onChange={e => setAddForm({ ...addForm, paid: e.target.value })}
+                        className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white tabular focus:outline-none focus:border-green-500/50"
+                      />
+                    </div>
+                    <button
+                      onClick={saveToInventory}
+                      disabled={addSaving}
+                      className="flex items-center gap-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {addSaving && <Loader2 size={12} className="animate-spin" />} Save
+                    </button>
+                    <button onClick={() => setAddForm(null)} className="text-gray-500 hover:text-white p-1"><X size={14} /></button>
+                    {!supabase && <p className="w-full text-orange-400/80 text-[11px]">Supabase not configured — run supabase/sealed_inventory.sql first.</p>}
+                  </div>
+                ) : added[product.id] ? (
+                  <Link
+                    href="/sealed-inventory"
+                    className="flex items-center justify-center gap-1.5 bg-green-950/60 border border-green-700/50 text-green-400 text-xs font-semibold px-3 py-2 rounded-lg transition-colors hover:bg-green-950"
+                  >
+                    <CheckCircle2 size={12} /> Added — view Sealed Inventory
+                  </Link>
+                ) : (
+                  <button
+                    onClick={() => setAddForm({ productId: product.id, qty: "1", paid: String(product.msrp) })}
+                    className="flex items-center justify-center gap-1.5 bg-gray-800 hover:bg-gray-700 border border-green-700/40 text-green-400 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+                  >
+                    <Archive size={12} /> Bought it? Add to Inventory
+                  </button>
+                )}
+
                 <div>
                   <div className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1.5">
                     Resell Market

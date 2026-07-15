@@ -33,6 +33,26 @@ export type DbCard = {
   updated_at: string;
 };
 
+export type SealedStatus = "owned" | "listed" | "sold";
+
+/** Row shape of the public.sealed_inventory table (see supabase/sealed_inventory.sql) */
+export type DbSealedItem = {
+  id: string;
+  product_id: string;
+  product_name: string;
+  qty: number;
+  bought_price: number;
+  current_market: number | null;
+  status: SealedStatus;
+  platform: string | null;
+  asking_price: number | null;
+  listed_at: string | null;
+  sold_price: number | null;
+  sold_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export function daysSince(iso: string | null): number {
   if (!iso) return 0;
   const ms = Date.now() - new Date(iso).getTime();
