@@ -37,11 +37,13 @@ const typeColors: Record<ProductType, string> = {
   "Booster Pack": "bg-gray-800 border-gray-700 text-gray-400",
 };
 
-const hotnessColors: Record<Hotness, string> = {
-  "🔥 Hot": "bg-orange-950/60 border-orange-700/40 text-orange-400",
-  "📈 Rising": "bg-green-950/60 border-green-700/40 text-green-400",
-  "✅ Stable": "bg-gray-800 border-gray-700 text-gray-400",
-  "❄️ Cooling": "bg-blue-950/60 border-blue-700/40 text-blue-400",
+// Demand callout — the hero of the card, not an afterthought.
+// High-contrast blocks so the demand note reads before anything else.
+const demandBanner: Record<Hotness, { label: string; cls: string; noteCls: string }> = {
+  "🔥 Hot": { label: "🔥 HOT", cls: "bg-orange-500/15 border-orange-500/50", noteCls: "text-orange-200" },
+  "📈 Rising": { label: "📈 RISING", cls: "bg-green-500/15 border-green-500/50", noteCls: "text-green-200" },
+  "✅ Stable": { label: "✅ STABLE", cls: "bg-blue-500/10 border-blue-500/40", noteCls: "text-blue-200" },
+  "❄️ Cooling": { label: "❄️ COOLING", cls: "bg-cyan-500/10 border-cyan-500/40", noteCls: "text-cyan-200" },
 };
 
 function fmt(n: number) { return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -50,18 +52,33 @@ function ebayUrl(query: string) {
   return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(`${query} sealed`)}&LH_Sold=1&LH_Complete=1`;
 }
 
+// Plain-English verdict for beginners: what do I DO with this product?
 type Verdict = { label: string; cls: string; Icon: typeof CheckCircle2 };
 function verdictFor(roi: number): Verdict {
-  if (roi > 30) return { label: "Flip It", cls: "bg-green-950/80 border-green-700/50 text-green-400", Icon: CheckCircle2 };
-  if (roi >= 10) return { label: "Watch", cls: "bg-yellow-950/80 border-yellow-700/50 text-yellow-400", Icon: AlertTriangle };
-  return { label: "Pass", cls: "bg-red-950/80 border-red-700/50 text-red-400", Icon: XCircle };
+  if (roi > 30) return { label: "BUY", cls: "bg-green-500/20 border-green-500/60 text-green-300", Icon: CheckCircle2 };
+  if (roi >= 10) return { label: "WATCH", cls: "bg-yellow-500/20 border-yellow-500/60 text-yellow-300", Icon: AlertTriangle };
+  return { label: "SKIP", cls: "bg-gray-800 border-gray-600 text-gray-400", Icon: XCircle };
 }
+const NO_PRICE_VERDICT: Verdict = {
+  label: "ADD PRICE",
+  cls: "bg-gray-800 border-gray-700 text-gray-500",
+  Icon: AlertTriangle,
+};
 
 export default function SealedTracker() {
   const [filter, setFilter] = useState<TypeFilter>("All");
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [stock, setStock] = useState<StockMaps>({ bestbuy: {}, target: {} });
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+  const [lightbox, setLightbox] = useState<{ name: string; imageUrl: string } | null>(null);
+
+  // Esc closes the image lightbox
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setLightbox(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
 
   // Market prices persist per product in localStorage (pack-price-{id})
   useEffect(() => {
@@ -161,33 +178,46 @@ export default function SealedTracker() {
           const gross = hasPrice ? market - product.msrp : 0;
           const net = hasPrice ? market * (1 - FEE_RATE) - SEALED_SHIPPING - product.msrp : 0;
           const roi = hasPrice ? (net / product.msrp) * 100 : 0;
-          const verdict = hasPrice ? verdictFor(roi) : null;
+          const verdict = hasPrice ? verdictFor(roi) : NO_PRICE_VERDICT;
+          const demand = demandBanner[product.hotness];
 
           return (
             <div key={product.id} className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex flex-col transition-all">
-              {/* Image + name + badges */}
-              <div className="flex gap-3 mb-2">
-                <div className="relative w-20 h-20 flex-shrink-0 rounded-md overflow-hidden bg-gray-800">
-                  <Image src={product.imageUrl} alt={product.name} fill className="object-contain" sizes="80px" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3 mb-1.5">
-                    <div className="font-semibold text-white text-sm leading-tight">{product.name}</div>
-                    <span className={`flex-shrink-0 border text-[11px] font-medium px-2 py-0.5 rounded-full ${hotnessColors[product.hotness]}`}>
-                      {product.hotness}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="bg-gray-800 border border-gray-700 text-gray-400 text-[11px] font-medium px-2 py-0.5 rounded-full">
-                      {product.set}
-                    </span>
-                    <span className={`border text-[11px] font-medium px-2 py-0.5 rounded-full ${typeColors[product.type]}`}>
-                      {product.type}
-                    </span>
-                  </div>
+              {/* Product image — big, clickable to inspect at full size */}
+              <button
+                onClick={() => setLightbox({ name: product.name, imageUrl: product.imageUrl })}
+                title="Click to enlarge"
+                className="relative w-full h-44 mb-3 rounded-lg overflow-hidden bg-gray-950/60 border border-gray-800 cursor-zoom-in group"
+              >
+                <Image src={product.imageUrl} alt={product.name} fill className="object-contain p-2 transition-transform group-hover:scale-105" sizes="(max-width: 768px) 100vw, 50vw" />
+                <span className="absolute bottom-2 right-2 bg-gray-950/80 text-gray-400 text-[10px] px-2 py-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                  🔍 click to enlarge
+                </span>
+              </button>
+
+              {/* Title + chips */}
+              <div className="mb-2">
+                <div className="font-semibold text-white text-sm leading-tight mb-1.5">{product.name}</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="bg-gray-800 border border-gray-700 text-gray-400 text-[11px] font-medium px-2 py-0.5 rounded-full">
+                    {product.set}
+                  </span>
+                  <span className={`border text-[11px] font-medium px-2 py-0.5 rounded-full ${typeColors[product.type]}`}>
+                    {product.type}
+                  </span>
                 </div>
               </div>
-              <p className="text-gray-500 text-xs mb-4">{product.notes}</p>
+
+              {/* The story, top to bottom: verdict → demand proof → profit math */}
+              <div className={`flex items-center gap-3 border rounded-lg px-3 py-2.5 mb-3 ${demand.cls}`}>
+                <span className={`flex-shrink-0 flex items-center gap-1 border text-xs font-extrabold px-2.5 py-1 rounded-lg ${verdict.cls}`}>
+                  <verdict.Icon size={12} /> {verdict.label}
+                </span>
+                <div className="min-w-0">
+                  <div className={`text-[11px] font-extrabold tracking-wide ${demand.noteCls}`}>{demand.label}</div>
+                  <div className={`text-xs font-medium leading-snug ${demand.noteCls}`}>{product.notes}</div>
+                </div>
+              </div>
 
               {/* MSRP + market price input */}
               <div className="grid grid-cols-2 gap-3 mb-3">
@@ -238,12 +268,10 @@ export default function SealedTracker() {
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-xs pt-1 border-t border-gray-800">
-                    <span className="text-gray-500">ROI <span className="tabular font-medium text-white ml-1">{roi >= 0 ? "+" : ""}{roi.toFixed(1)}%</span></span>
-                    {verdict && (
-                      <span className={`flex items-center gap-1 border text-[11px] font-bold px-2.5 py-1 rounded-full ${verdict.cls}`}>
-                        <verdict.Icon size={11} /> {verdict.label}
-                      </span>
-                    )}
+                    <span className="text-gray-500">ROI</span>
+                    <span className={`tabular font-bold ${roi > 30 ? "text-green-400" : roi >= 10 ? "text-yellow-400" : "text-gray-400"}`}>
+                      {roi >= 0 ? "+" : ""}{roi.toFixed(1)}%
+                    </span>
                   </div>
                 </div>
               ) : (
@@ -335,6 +363,30 @@ export default function SealedTracker() {
           );
         })}
       </div>
+
+      {/* Image lightbox */}
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          className="fixed inset-0 z-[100] bg-gray-950/90 backdrop-blur-sm flex items-center justify-center p-6 cursor-zoom-out"
+          role="dialog" aria-modal="true" aria-label={`${lightbox.name} image`}
+        >
+          <div className="relative w-full max-w-2xl h-[70vh]">
+            <Image
+              src={lightbox.imageUrl.replace("_in_400x400", "_in_1000x1000")}
+              alt={lightbox.name}
+              fill
+              className="object-contain"
+              sizes="(max-width: 768px) 100vw, 672px"
+            />
+          </div>
+          <div className="absolute bottom-6 left-0 right-0 text-center">
+            <span className="bg-gray-900/90 border border-gray-700 text-gray-300 text-xs px-4 py-2 rounded-full">
+              {lightbox.name} · click anywhere or press Esc to close
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Tips */}
       <div className="bg-gray-900 border border-gray-800 border-l-4 border-l-yellow-400 rounded-xl p-5">
