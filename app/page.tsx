@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { PRODUCTS, ProductType, Hotness } from "@/lib/products";
 import { Package2, Lightbulb, CheckCircle2, AlertTriangle, XCircle, ExternalLink } from "lucide-react";
 
@@ -144,20 +145,27 @@ export default function SealedTracker() {
 
           return (
             <div key={product.id} className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex flex-col transition-all">
-              {/* Name + badges */}
-              <div className="flex items-start justify-between gap-3 mb-1.5">
-                <div className="font-semibold text-white text-sm leading-tight">{product.name}</div>
-                <span className={`flex-shrink-0 border text-[11px] font-medium px-2 py-0.5 rounded-full ${hotnessColors[product.hotness]}`}>
-                  {product.hotness}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap mb-2">
-                <span className="bg-gray-800 border border-gray-700 text-gray-400 text-[11px] font-medium px-2 py-0.5 rounded-full">
-                  {product.set}
-                </span>
-                <span className={`border text-[11px] font-medium px-2 py-0.5 rounded-full ${typeColors[product.type]}`}>
-                  {product.type}
-                </span>
+              {/* Image + name + badges */}
+              <div className="flex gap-3 mb-2">
+                <div className="relative w-20 h-20 flex-shrink-0 rounded-md overflow-hidden bg-gray-800">
+                  <Image src={product.imageUrl} alt={product.name} fill className="object-contain" sizes="80px" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3 mb-1.5">
+                    <div className="font-semibold text-white text-sm leading-tight">{product.name}</div>
+                    <span className={`flex-shrink-0 border text-[11px] font-medium px-2 py-0.5 rounded-full ${hotnessColors[product.hotness]}`}>
+                      {product.hotness}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="bg-gray-800 border border-gray-700 text-gray-400 text-[11px] font-medium px-2 py-0.5 rounded-full">
+                      {product.set}
+                    </span>
+                    <span className={`border text-[11px] font-medium px-2 py-0.5 rounded-full ${typeColors[product.type]}`}>
+                      {product.type}
+                    </span>
+                  </div>
+                </div>
               </div>
               <p className="text-gray-500 text-xs mb-4">{product.notes}</p>
 
