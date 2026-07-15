@@ -2,16 +2,17 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2 } from "lucide-react";
+import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays } from "lucide-react";
 
 const nav = [
-  { href: "/", label: "Hunt List", icon: Target },
+  { href: "/", label: "Sealed Products", icon: Package2 },
+  { href: "/releases", label: "Upcoming Releases", icon: CalendarDays },
+  { href: "/hunt", label: "Hunt List", icon: Target },
   { href: "/inventory", label: "Inventory", icon: Package },
+  { href: "/listings", label: "Listings", icon: Tag },
   { href: "/scanner", label: "Market Scanner", icon: Zap },
   { href: "/grading", label: "PSA Grading", icon: Award, starterLocked: true },
   { href: "/lot", label: "Lot Analyzer", icon: Boxes },
-  { href: "/listings", label: "Listings", icon: Tag },
-  { href: "/packs", label: "Packs", icon: Package2 },
   { href: "/guide", label: "Guide", icon: BookOpen },
 ];
 
