@@ -4,16 +4,45 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays } from "lucide-react";
 
-const nav = [
-  { href: "/", label: "Sealed Products", icon: Package2 },
-  { href: "/releases", label: "Upcoming Releases", icon: CalendarDays },
-  { href: "/hunt", label: "Hunt List", icon: Target },
-  { href: "/inventory", label: "Inventory", icon: Package },
-  { href: "/listings", label: "Listings", icon: Tag },
-  { href: "/scanner", label: "Market Scanner", icon: Zap },
-  { href: "/grading", label: "PSA Grading", icon: Award, starterLocked: true },
-  { href: "/lot", label: "Lot Analyzer", icon: Boxes },
-  { href: "/guide", label: "Guide", icon: BookOpen },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof Target;
+  starterLocked?: boolean;
+};
+
+type NavSection = { title: string; items: NavItem[] };
+
+const sections: NavSection[] = [
+  {
+    title: "Sealed Product",
+    items: [
+      { href: "/", label: "Sealed Products", icon: Package2 },
+      { href: "/releases", label: "Upcoming Releases", icon: CalendarDays },
+    ],
+  },
+  {
+    title: "Single Cards",
+    items: [
+      { href: "/hunt", label: "Hunt List", icon: Target },
+      { href: "/inventory", label: "Inventory", icon: Package },
+      { href: "/listings", label: "Listings", icon: Tag },
+      { href: "/scanner", label: "Market Scanner", icon: Zap },
+    ],
+  },
+  {
+    title: "Card Tools",
+    items: [
+      { href: "/grading", label: "PSA Grading", icon: Award, starterLocked: true },
+      { href: "/lot", label: "Lot Analyzer", icon: Boxes },
+    ],
+  },
+  {
+    title: "Learn",
+    items: [
+      { href: "/guide", label: "Guide", icon: BookOpen },
+    ],
+  },
 ];
 
 export default function Sidebar() {
@@ -48,40 +77,49 @@ export default function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 p-4 space-y-1">
-        {nav.map(({ href, label, icon: Icon, starterLocked }) => {
-          const active = path === href;
+      <nav className="flex-1 overflow-y-auto p-4 space-y-5">
+        {sections.map(section => (
+          <div key={section.title}>
+            <div className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-gray-600">
+              {section.title}
+            </div>
+            <div className="space-y-1">
+              {section.items.map(({ href, label, icon: Icon, starterLocked }) => {
+                const active = path === href;
 
-          // Starter Mode locks grading: no grading until the bankroll is built
-          if (starterLocked && starterMode) {
-            return (
-              <div
-                key={href}
-                title="Unlock after 30 days"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 cursor-not-allowed select-none"
-              >
-                <Icon size={16} />
-                {label}
-                <Lock size={12} className="ml-auto" />
-              </div>
-            );
-          }
+                // Starter Mode locks grading: no grading until the bankroll is built
+                if (starterLocked && starterMode) {
+                  return (
+                    <div
+                      key={href}
+                      title="Unlock after 30 days"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 cursor-not-allowed select-none"
+                    >
+                      <Icon size={16} />
+                      {label}
+                      <Lock size={12} className="ml-auto" />
+                    </div>
+                  );
+                }
 
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                active
-                  ? "bg-yellow-400/10 text-yellow-400 border border-yellow-400/20"
-                  : "text-gray-400 hover:text-white hover:bg-gray-800"
-              }`}
-            >
-              <Icon size={16} />
-              {label}
-            </Link>
-          );
-        })}
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      active
+                        ? "bg-yellow-400/10 text-yellow-400 border border-yellow-400/20"
+                        : "text-gray-400 hover:text-white hover:bg-gray-800"
+                    }`}
+                  >
+                    <Icon size={16} />
+                    {label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* AI Agent Status */}
