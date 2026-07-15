@@ -61,6 +61,7 @@ export default function SealedTracker() {
   const [filter, setFilter] = useState<TypeFilter>("All");
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [stock, setStock] = useState<StockMaps>({ bestbuy: {}, target: {} });
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
 
   // Market prices persist per product in localStorage (pack-price-{id})
   useEffect(() => {
@@ -94,6 +95,23 @@ export default function SealedTracker() {
     if (value.trim()) localStorage.setItem(`pack-price-${id}`, value);
     else localStorage.removeItem(`pack-price-${id}`);
   }
+
+  // Live sealed prices via tcgapi.dev — best-effort; missing data just
+  // means the manual input stays in charge for that product
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/sealed-prices");
+        const json = await res.json();
+        if (!res.ok || !json.prices) return;
+        const map: Record<string, number> = {};
+        for (const p of json.prices) {
+          if (typeof p.market === "number" && p.market > 0) map[p.productId] = p.market;
+        }
+        setLivePrices(map);
+      } catch { /* manual input remains the source */ }
+    })();
+  }, []);
 
   const visible = filter === "All" ? PRODUCTS : PRODUCTS.filter(p => p.type === filter);
 
@@ -136,8 +154,10 @@ export default function SealedTracker() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {visible.map(product => {
           const raw = prices[product.id] ?? "";
-          const market = parseFloat(raw);
-          const hasPrice = !isNaN(market) && market > 0;
+          const live = livePrices[product.id]; // live wins; manual is the fallback
+          const manual = parseFloat(raw);
+          const market = live ?? manual;
+          const hasPrice = live != null || (!isNaN(manual) && manual > 0);
           const gross = hasPrice ? market - product.msrp : 0;
           const net = hasPrice ? market * (1 - FEE_RATE) - SEALED_SHIPPING - product.msrp : 0;
           const roi = hasPrice ? (net / product.msrp) * 100 : 0;
@@ -175,19 +195,31 @@ export default function SealedTracker() {
                   <div className="text-gray-500 text-[11px] mb-0.5">MSRP</div>
                   <div className="text-white text-base font-bold tabular">${fmt(product.msrp)} <span className="text-gray-600 text-[11px] font-normal">retail</span></div>
                 </div>
-                <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5">
-                  <div className="text-gray-500 text-[11px] mb-0.5">Current Market Price</div>
-                  <div className="relative">
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
-                    <input
-                      type="number" min="0" step="0.01"
-                      value={raw}
-                      onChange={e => updatePrice(product.id, e.target.value)}
-                      placeholder="0.00"
-                      className="w-full bg-transparent border-0 border-b border-gray-700 focus:border-yellow-400/60 pl-4 py-0.5 text-base font-bold text-white tabular placeholder-gray-700 focus:outline-none"
-                    />
+                {live != null ? (
+                  <div className="bg-gray-950/60 border border-green-800/40 rounded-lg px-3 py-2.5">
+                    <div className="text-gray-500 text-[11px] mb-0.5 flex items-center gap-1.5">
+                      Current Market Price
+                      <span className="inline-flex items-center gap-1 bg-green-950/80 border border-green-700/50 text-green-400 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                        <span className="w-1 h-1 rounded-full bg-green-400 inline-block" /> LIVE
+                      </span>
+                    </div>
+                    <div className="text-white text-base font-bold tabular">${fmt(live)}</div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5">
+                    <div className="text-gray-500 text-[11px] mb-0.5">Current Market Price <span className="text-gray-700">(manual)</span></div>
+                    <div className="relative">
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={raw}
+                        onChange={e => updatePrice(product.id, e.target.value)}
+                        placeholder="0.00"
+                        className="w-full bg-transparent border-0 border-b border-gray-700 focus:border-yellow-400/60 pl-4 py-0.5 text-base font-bold text-white tabular placeholder-gray-700 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Profit math or prompt */}
