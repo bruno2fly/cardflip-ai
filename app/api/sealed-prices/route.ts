@@ -14,7 +14,9 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const result = await getSealedPrices(PRODUCTS.map(p => ({ id: p.id, name: p.name })));
+    const result = await getSealedPrices(
+      PRODUCTS.map(p => ({ id: p.id, name: p.name, tcgProductId: p.tcgProductId }))
+    );
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

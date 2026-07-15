@@ -48,6 +48,18 @@ const demandBanner: Record<Hotness, { label: string; cls: string; noteCls: strin
 
 function fmt(n: number) { return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+/**
+ * Smart manual-price seed: pull the midpoint of a "$150–200+" style range
+ * out of the demand note, so the manual field starts from a real anchor
+ * instead of a blank $0.00. Returns null when the note has no price range.
+ */
+function seedFromNotes(notes: string): number | null {
+  const range = notes.match(/\$(\d+(?:\.\d+)?)\s*[–\-—]\s*\$?(\d+(?:\.\d+)?)/);
+  if (range) return Math.round((parseFloat(range[1]) + parseFloat(range[2])) / 2);
+  const single = notes.match(/\$(\d+(?:\.\d+)?)/);
+  return single ? Math.round(parseFloat(single[1])) : null;
+}
+
 function ebayUrl(query: string) {
   return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(`${query} sealed`)}&LH_Sold=1&LH_Complete=1`;
 }
@@ -69,7 +81,7 @@ export default function SealedTracker() {
   const [filter, setFilter] = useState<TypeFilter>("All");
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [stock, setStock] = useState<StockMaps>({ bestbuy: {}, target: {} });
-  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+  const [livePrices, setLivePrices] = useState<Record<string, { market: number; source: "tcgapi" | "tcgplayer-est" }>>({});
   const [lightbox, setLightbox] = useState<{ name: string; imageUrl: string } | null>(null);
 
   // Esc closes the image lightbox
@@ -121,9 +133,11 @@ export default function SealedTracker() {
         const res = await fetch("/api/sealed-prices");
         const json = await res.json();
         if (!res.ok || !json.prices) return;
-        const map: Record<string, number> = {};
+        const map: Record<string, { market: number; source: "tcgapi" | "tcgplayer-est" }> = {};
         for (const p of json.prices) {
-          if (typeof p.market === "number" && p.market > 0) map[p.productId] = p.market;
+          if (typeof p.market === "number" && p.market > 0 && p.source) {
+            map[p.productId] = { market: p.market, source: p.source };
+          }
         }
         setLivePrices(map);
       } catch { /* manual input remains the source */ }
@@ -171,9 +185,12 @@ export default function SealedTracker() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {visible.map(product => {
           const raw = prices[product.id] ?? "";
-          const live = livePrices[product.id]; // live wins; manual is the fallback
-          const manual = parseFloat(raw);
-          const market = live ?? manual;
+          const live = livePrices[product.id]; // live/est wins; manual is the fallback
+          // seeded estimate from the demand note anchors the manual field
+          const seed = seedFromNotes(product.notes);
+          const manualStr = raw !== "" ? raw : seed != null ? String(seed) : "";
+          const manual = parseFloat(manualStr);
+          const market = live?.market ?? manual;
           const hasPrice = live != null || (!isNaN(manual) && manual > 0);
           const gross = hasPrice ? market - product.msrp : 0;
           const net = hasPrice ? market * (1 - FEE_RATE) - SEALED_SHIPPING - product.msrp : 0;
@@ -226,23 +243,37 @@ export default function SealedTracker() {
                   <div className="text-white text-base font-bold tabular">${fmt(product.msrp)} <span className="text-gray-600 text-[11px] font-normal">retail</span></div>
                 </div>
                 {live != null ? (
-                  <div className="bg-gray-950/60 border border-green-800/40 rounded-lg px-3 py-2.5">
+                  <div className={`bg-gray-950/60 border rounded-lg px-3 py-2.5 ${live.source === "tcgapi" ? "border-green-800/40" : "border-blue-800/40"}`}>
                     <div className="text-gray-500 text-[11px] mb-0.5 flex items-center gap-1.5">
                       Current Market Price
-                      <span className="inline-flex items-center gap-1 bg-green-950/80 border border-green-700/50 text-green-400 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                        <span className="w-1 h-1 rounded-full bg-green-400 inline-block" /> LIVE
-                      </span>
+                      {live.source === "tcgapi" ? (
+                        <span className="inline-flex items-center gap-1 bg-green-950/80 border border-green-700/50 text-green-400 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                          <span className="w-1 h-1 rounded-full bg-green-400 inline-block" /> LIVE
+                        </span>
+                      ) : (
+                        <span
+                          title="TCGPlayer market price — secondary source, not real-time"
+                          className="inline-flex items-center gap-1 bg-blue-950/80 border border-blue-700/50 text-blue-400 text-[9px] font-bold px-1.5 py-0.5 rounded-full cursor-help"
+                        >
+                          <span className="w-1 h-1 rounded-full bg-blue-400 inline-block" /> EST · TCGPlayer
+                        </span>
+                      )}
                     </div>
-                    <div className="text-white text-base font-bold tabular">${fmt(live)}</div>
+                    <div className="text-white text-base font-bold tabular">${fmt(live.market)}</div>
                   </div>
                 ) : (
                   <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5">
-                    <div className="text-gray-500 text-[11px] mb-0.5">Current Market Price <span className="text-gray-700">(manual)</span></div>
+                    <div className="text-gray-500 text-[11px] mb-0.5">
+                      Current Market Price{" "}
+                      <span className="text-gray-700">
+                        (manual{raw === "" && seed != null ? " · seeded from demand note" : ""})
+                      </span>
+                    </div>
                     <div className="relative">
                       <span className="absolute left-0 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
                       <input
                         type="number" min="0" step="0.01"
-                        value={raw}
+                        value={manualStr}
                         onChange={e => updatePrice(product.id, e.target.value)}
                         placeholder="0.00"
                         className="w-full bg-transparent border-0 border-b border-gray-700 focus:border-yellow-400/60 pl-4 py-0.5 text-base font-bold text-white tabular placeholder-gray-700 focus:outline-none"
