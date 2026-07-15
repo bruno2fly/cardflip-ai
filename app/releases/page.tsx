@@ -105,6 +105,21 @@ export default function UpcomingReleases() {
       for (const s of all) loadedAlerts[s.id] = localStorage.getItem(`release-alert-${s.id}`) === "1";
       setAlerts(loadedAlerts);
       setReleases({ status: "ok", upcoming: json.upcoming, recent: json.recent, intel: json.intel ?? [] });
+
+      try {
+        const prefRes = await fetch(`/api/releases/toggle-alert?setIds=${encodeURIComponent(all.map(s => s.id).join(","))}`);
+        const prefJson = await prefRes.json();
+        if (!prefRes.ok || !prefJson.prefs) throw new Error();
+
+        const hydratedAlerts = { ...loadedAlerts };
+        for (const s of all) {
+          hydratedAlerts[s.id] = prefJson.prefs[s.id] === true;
+          localStorage.setItem(`release-alert-${s.id}`, hydratedAlerts[s.id] ? "1" : "0");
+        }
+        setAlerts(hydratedAlerts);
+      } catch {
+        // localStorage remains the offline rendering fallback; cron uses Supabase.
+      }
     } catch {
       setReleases({ status: "error" });
     }
@@ -112,12 +127,23 @@ export default function UpcomingReleases() {
 
   useEffect(() => { loadReleases(); }, [loadReleases]);
 
-  function toggleAlert(setId: string) {
-    setAlerts(prev => {
-      const next = !prev[setId];
-      localStorage.setItem(`release-alert-${setId}`, next ? "1" : "0");
-      return { ...prev, [setId]: next };
-    });
+  async function toggleAlert(setId: string) {
+    const previous = !!alerts[setId];
+    const next = !previous;
+    setAlerts(prev => ({ ...prev, [setId]: next }));
+    localStorage.setItem(`release-alert-${setId}`, next ? "1" : "0");
+
+    try {
+      const res = await fetch("/api/releases/toggle-alert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ setId, enabled: next }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setAlerts(prev => ({ ...prev, [setId]: previous }));
+      localStorage.setItem(`release-alert-${setId}`, previous ? "1" : "0");
+    }
   }
 
   const releaseGroups = releases.status === "ok" ? [

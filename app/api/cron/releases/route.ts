@@ -47,8 +47,10 @@ async function sendReleaseEmail(set: ReleaseSet): Promise<boolean> {
 
 /**
  * GET /api/cron/releases — daily Vercel cron (9am EST, see vercel.json).
- * Emails an alert for any set releasing within 7 days. Each set is alerted
- * exactly once, tracked in the Supabase `release_alerts_log` table.
+ * Emails an alert for any set releasing within 7 days, but ONLY for sets a
+ * user explicitly opted into via the "Set Alert" toggle on /releases
+ * (Supabase `release_alert_prefs`, enabled = true — default is off/no row).
+ * Each set is still alerted at most once, tracked in `release_alerts_log`.
  */
 export async function GET() {
   try {
@@ -62,12 +64,30 @@ export async function GET() {
     }
 
     if (!supabase) {
-      // without the log table we can't dedup — skip rather than spam daily
+      // without the log/prefs tables we can't dedup or check opt-in — skip
+      // rather than spam daily
       return NextResponse.json({
         checked: upcoming.length,
         imminent: imminent.length,
         alerted: 0,
-        skipped: "Supabase not configured — release_alerts_log needed to avoid duplicate alerts",
+        skipped: "Supabase not configured — release_alerts_log/release_alert_prefs needed",
+      });
+    }
+
+    // only sets the user explicitly opted into ("Set Alert" toggle ON)
+    const { data: prefs } = await supabase
+      .from("release_alert_prefs")
+      .select("set_id, enabled")
+      .in("set_id", imminent.map(s => s.id));
+    const optedIn = new Set((prefs ?? []).filter(p => p.enabled).map(p => p.set_id));
+    const wanted = imminent.filter(s => optedIn.has(s.id));
+
+    if (wanted.length === 0) {
+      return NextResponse.json({
+        checked: upcoming.length,
+        imminent: imminent.length,
+        optedIn: 0,
+        alerted: 0,
       });
     }
 
@@ -75,9 +95,9 @@ export async function GET() {
     const { data: logged } = await supabase
       .from("release_alerts_log")
       .select("set_id")
-      .in("set_id", imminent.map(s => s.id));
+      .in("set_id", wanted.map(s => s.id));
     const alreadyAlerted = new Set((logged ?? []).map(r => r.set_id));
-    const toAlert = imminent.filter(s => !alreadyAlerted.has(s.id));
+    const toAlert = wanted.filter(s => !alreadyAlerted.has(s.id));
 
     let alerted = 0;
     for (const set of toAlert) {
@@ -95,7 +115,8 @@ export async function GET() {
     return NextResponse.json({
       checked: upcoming.length,
       imminent: imminent.length,
-      skippedAlreadyAlerted: imminent.length - toAlert.length,
+      optedIn: wanted.length,
+      skippedAlreadyAlerted: wanted.length - toAlert.length,
       alerted,
       emailConfigured: Boolean(process.env.RESEND_API_KEY && process.env.ALERT_EMAIL),
     });
