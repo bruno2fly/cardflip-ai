@@ -12,6 +12,7 @@ export type ReleaseSet = {
   symbolUrl: string | null;
   daysUntil?: number;    // set on upcoming releases
   daysAgo?: number;      // set on recently released
+  announcedVia?: string; // e.g. "pokemon.com" — official source ahead of the API
 };
 
 export type Releases = { upcoming: ReleaseSet[]; recent: ReleaseSet[] };

@@ -1,20 +1,20 @@
 import { NextResponse } from "next/server";
-import { getLeakIntel, LeakIntel } from "@/lib/leakIntel";
+import { getAllIntel, IntelItem } from "@/lib/intel";
 import { supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-function leakEmailHtml(items: LeakIntel[]): string {
+function leakEmailHtml(items: IntelItem[]): string {
   const rows = items.map(i => `
     <tr>
       <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;">
         <div style="font-weight:700;color:#111827;font-size:15px;">${i.setName}</div>
         <div style="font-size:12px;color:#6b7280;margin-top:2px;">
-          ${i.releaseDate ? `Releases ${i.releaseDate}` : "Release date not announced yet"}${i.detail ? ` · ${i.detail}` : ""}
+          ${i.releaseDate ? `Releases ${i.releaseDate}` : "Release date not announced yet"}${i.detail ? ` · ${i.detail}` : ""} · ${i.confidence === "official" ? "OFFICIAL (pokemon.com)" : `early intel (${i.source})`}
         </div>
       </td>
       <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;text-align:center;">
-        <a href="${i.sourceUrl}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;">Serebii →</a>
+        <a href="${i.sourceUrl}" style="display:inline-block;background:${i.confidence === "official" ? "#059669" : "#7c3aed"};color:#ffffff;text-decoration:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;">${i.confidence === "official" ? "pokemon.com" : "Serebii"} →</a>
       </td>
     </tr>`).join("");
 
@@ -25,7 +25,7 @@ function leakEmailHtml(items: LeakIntel[]): string {
       <div style="background:#111827;padding:20px 24px;">
         <div style="color:#facc15;font-size:18px;font-weight:800;">🔮 CardFlip AI — Early Set Intel</div>
         <div style="color:#9ca3af;font-size:13px;margin-top:4px;">
-          ${items.length} new set reveal${items.length === 1 ? "" : "s"} spotted on Serebii — weeks before the official API lists ${items.length === 1 ? "it" : "them"}.
+          ${items.length} new set reveal${items.length === 1 ? "" : "s"} spotted (pokemon.com official + Serebii intel) — weeks before the official API lists ${items.length === 1 ? "it" : "them"}.
         </div>
       </div>
       <table style="width:100%;border-collapse:collapse;">${rows}</table>
@@ -37,7 +37,7 @@ function leakEmailHtml(items: LeakIntel[]): string {
 </html>`;
 }
 
-async function sendLeakEmail(items: LeakIntel[]): Promise<boolean> {
+async function sendLeakEmail(items: IntelItem[]): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
   const to = process.env.ALERT_EMAIL;
   if (!apiKey || !to) return false;
@@ -57,13 +57,14 @@ async function sendLeakEmail(items: LeakIntel[]): Promise<boolean> {
 
 /**
  * GET /api/cron/leak-scan — every 6 hours (see vercel.json).
- * Scrapes Serebii for set reveals; emails Jason the moment a NEW one shows
+ * Checks all working intel sources (pokemon.com curated officials + Serebii
+ * scrape); emails Jason the moment a NEW set shows
  * up. Dedup via Supabase `leak_intel_log` (unique per normalized set name)
  * so each reveal alerts exactly once, ever.
  */
 export async function GET() {
   try {
-    const intel = await getLeakIntel(true);
+    const intel = await getAllIntel(true);
 
     if (intel.length === 0) {
       return NextResponse.json({ found: 0, newReveals: 0, emailed: false });

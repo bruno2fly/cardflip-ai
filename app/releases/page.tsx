@@ -8,8 +8,15 @@ type LeakIntel = {
   releaseDate: string | null;
   source: string;
   sourceUrl: string;
+  confidence: string;
   foundAt: number;
   detail?: string;
+};
+
+const SOURCE_LABEL: Record<string, string> = {
+  serebii: "Serebii",
+  pokebeach: "PokeBeach",
+  "pokemon-official": "pokemon.com",
 };
 
 type ReleaseSet = {
@@ -21,6 +28,7 @@ type ReleaseSet = {
   symbolUrl: string | null;
   daysUntil?: number;
   daysAgo?: number;
+  announcedVia?: string; // "pokemon.com" — official, ahead of the slow API
 };
 
 type ReleasesState =
@@ -56,7 +64,14 @@ function ReleaseCard({ set, alertOn, onToggle, borderCls }: {
             <Image src={set.logoUrl} alt={set.name} fill className="object-contain object-left" sizes="128px" />
           </div>
         ) : null}
-        <div className="text-white font-semibold text-sm leading-tight">{set.name}</div>
+        <div className="text-white font-semibold text-sm leading-tight flex items-center gap-2 flex-wrap">
+          {set.name}
+          {set.announcedVia && (
+            <span className="bg-green-950/60 border border-green-700/40 text-green-400 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+              📣 {set.announcedVia}
+            </span>
+          )}
+        </div>
         <div className="text-gray-500 text-xs mt-0.5">{set.series} · releases {set.releaseDate}</div>
       </div>
 
@@ -164,7 +179,7 @@ export default function UpcomingReleases() {
                   target="_blank" rel="noopener noreferrer"
                   className="flex-shrink-0 flex items-center gap-1 text-[11px] font-semibold px-3 py-1.5 rounded-full border bg-purple-950/40 border-purple-700/40 text-purple-400 hover:text-white transition-colors"
                 >
-                  <ExternalLink size={10} /> Serebii
+                  <ExternalLink size={10} /> {SOURCE_LABEL[item.source] ?? item.source}
                 </a>
               </div>
             ))}

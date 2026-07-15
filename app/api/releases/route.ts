@@ -1,32 +1,64 @@
 import { NextResponse } from "next/server";
-import { getReleases } from "@/lib/releases";
-import { getLeakIntel, LeakIntel } from "@/lib/leakIntel";
+import { getReleases, ReleaseSet } from "@/lib/releases";
+import { getAllIntel, IntelItem } from "@/lib/intel";
 
 /**
  * GET /api/releases
- * Confirmed: upcoming sets (today → +120 days) + last-7-days from the
- * official Pokemon TCG API (slow mirror, cached 6 hours).
- * Early intel: unofficial set reveals scraped from Serebii news (cached
- * 30 min) — often weeks ahead of the official API. Clearly separated so
- * the UI can label confirmed vs unofficial.
- * Returns { upcoming, recent, intel }.
+ * Confirmed = official Pokemon TCG API sets MERGED with officially-announced
+ * sets from pokemon.com (curated — pokemon.com is bot-walled from cloud IPs,
+ * see lib/officialAnnouncements.ts). Early intel = unofficial reveals
+ * (Serebii), clearly separated. Returns { upcoming, recent, intel }.
  */
 export async function GET() {
   try {
     const releases = await getReleases();
 
-    // intel is best-effort: a Serebii failure yields [] and never breaks this route
-    let intel: LeakIntel[] = [];
+    // intel is best-effort: every source is isolated; failures yield fewer items
+    let intel: IntelItem[] = [];
     try {
-      intel = await getLeakIntel();
-      // drop intel that the official API already lists — it's confirmed now
-      const confirmed = new Set(
-        [...releases.upcoming, ...releases.recent].map(s => s.name.toLowerCase())
-      );
-      intel = intel.filter(i => !confirmed.has(i.setName.toLowerCase()));
+      intel = await getAllIntel();
     } catch { /* keep intel = [] */ }
 
-    return NextResponse.json({ ...releases, intel });
+    const apiNames = new Set(
+      [...releases.upcoming, ...releases.recent].map(s => s.name.toLowerCase())
+    );
+
+    const dayMs = 86_400_000;
+    const upcoming = [...releases.upcoming];
+    const recent = [...releases.recent];
+    const earlyIntel: IntelItem[] = [];
+
+    for (const item of intel) {
+      if (apiNames.has(item.setName.toLowerCase())) continue; // API already lists it
+
+      // Official announcements (pokemon.com) go straight into Confirmed
+      if (item.confidence === "official" && item.releaseDateIso) {
+        const diffDays = Math.ceil((new Date(item.releaseDateIso).getTime() - Date.now()) / dayMs);
+        const entry: ReleaseSet = {
+          id: `official-${item.setName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+          name: item.setName,
+          series: "Officially Announced",
+          releaseDate: item.releaseDateIso.replace(/-/g, "/"),
+          logoUrl: null,
+          symbolUrl: null,
+          announcedVia: "pokemon.com",
+        };
+        if (diffDays >= 0 && diffDays <= 120) {
+          upcoming.push({ ...entry, daysUntil: diffDays });
+        } else if (diffDays < 0 && diffDays >= -7) {
+          recent.push({ ...entry, daysAgo: Math.abs(diffDays) });
+        }
+        continue;
+      }
+
+      // Everything else (Serebii etc.) stays clearly-labeled Early Intel
+      earlyIntel.push(item);
+    }
+
+    upcoming.sort((a, b) => (a.daysUntil ?? 0) - (b.daysUntil ?? 0));
+    recent.sort((a, b) => (a.daysAgo ?? 0) - (b.daysAgo ?? 0));
+
+    return NextResponse.json({ upcoming, recent, intel: earlyIntel });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: `Releases lookup failed: ${message}` }, { status: 502 });
