@@ -71,6 +71,22 @@ Hourly price-alert scan (scheduled by `vercel.json` crons; also triggered by the
 
 > Note: Vercel cron runs hit a fresh serverless instance, so the 6-hour hunt-list cache may refetch per run — that's fine, it's one API call.
 
+## Activating Best Buy live stock checks (currently OFF)
+
+Stock badges and the 30-min restock-alert cron read `BESTBUY_API_KEY`. Until it's
+set, every Best Buy badge shows **Unknown** and `/api/cron/stock` reports
+`bestbuyConfigured: false` — by design, never an error. To turn it on:
+
+1. Sign up at https://developer.bestbuy.com (free — click "Get API Key", register
+   with any email; approval is automated and the key usually arrives within minutes).
+2. Vercel → Project → Settings → Environment Variables → add `BESTBUY_API_KEY`
+   for Production (and Preview if you want it there), then redeploy.
+3. Verify: open `/api/stock` — `bestbuy.configured` should be `true` and statuses
+   flip from `unknown` to real `in-stock` / `out-of-stock` within one 15-min cache cycle.
+
+Target badges use an unofficial endpoint that is bot-walled from cloud IPs and will
+usually read Unknown in production — that's expected, not a bug.
+
 ## Data model
 
 One `cards` table drives all three pages: Inventory shows every row, Listings shows rows with `status` of `active`/`sold`, and the Scanner combines every row with live prices. See [`supabase/schema.sql`](supabase/schema.sql).
