@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/releases",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/stock",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
