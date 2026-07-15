@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getReleases, ReleaseSet } from "@/lib/releases";
+import { getConfirmedReleases, ReleaseSet } from "@/lib/releases";
 import { supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +52,9 @@ async function sendReleaseEmail(set: ReleaseSet): Promise<boolean> {
  */
 export async function GET() {
   try {
-    const { upcoming } = await getReleases();
+    // merged view: official API + curated pokemon.com announcements — the
+    // same list the /releases page shows, so the 7-day alerts match it
+    const { upcoming } = await getConfirmedReleases();
     const imminent = upcoming.filter(s => (s.daysUntil ?? 999) <= 7);
 
     if (imminent.length === 0) {

@@ -1,7 +1,11 @@
 /**
- * Upcoming Pokemon set releases from the Pokemon TCG API.
- * Shared by /api/releases (Packs page tab) and /api/cron/releases (email alerts).
+ * Upcoming Pokemon set releases from the Pokemon TCG API, plus
+ * getConfirmedReleases() which merges in the curated pokemon.com official
+ * announcements — the ONE source of truth for "confirmed upcoming sets",
+ * shared by /api/releases (page) and /api/cron/releases (7-day email alerts)
+ * so the page and the alerts can never disagree.
  */
+import { OFFICIAL_ANNOUNCEMENTS } from "@/lib/officialAnnouncements";
 
 export type ReleaseSet = {
   id: string;
@@ -75,4 +79,40 @@ export async function getReleases(): Promise<Releases> {
   upcoming.sort((a, b) => (a.daysUntil ?? 0) - (b.daysUntil ?? 0));
   recent.sort((a, b) => (a.daysAgo ?? 0) - (b.daysAgo ?? 0));
   return { upcoming, recent };
+}
+
+/**
+ * Confirmed releases = official Pokemon TCG API sets MERGED with the curated
+ * pokemon.com announcements (which the slow API usually lags behind).
+ * Officially-announced entries carry announcedVia: "pokemon.com".
+ */
+export async function getConfirmedReleases(): Promise<Releases> {
+  const { upcoming, recent } = await getReleases();
+  const known = new Set([...upcoming, ...recent].map(s => s.name.toLowerCase()));
+  const dayMs = 86_400_000;
+  const up = [...upcoming];
+  const rec = [...recent];
+
+  for (const a of OFFICIAL_ANNOUNCEMENTS) {
+    if (known.has(a.setName.toLowerCase())) continue; // API already lists it
+    const diffDays = Math.ceil((new Date(a.releaseDateIso).getTime() - Date.now()) / dayMs);
+    const entry: ReleaseSet = {
+      id: `official-${a.setName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      name: a.setName,
+      series: "Officially Announced",
+      releaseDate: a.releaseDateIso.replace(/-/g, "/"),
+      logoUrl: null,
+      symbolUrl: null,
+      announcedVia: "pokemon.com",
+    };
+    if (diffDays >= 0 && diffDays <= HORIZON_DAYS) {
+      up.push({ ...entry, daysUntil: diffDays });
+    } else if (diffDays < 0 && diffDays >= -RECENT_DAYS) {
+      rec.push({ ...entry, daysAgo: Math.abs(diffDays) });
+    }
+  }
+
+  up.sort((a, b) => (a.daysUntil ?? 0) - (b.daysUntil ?? 0));
+  rec.sort((a, b) => (a.daysAgo ?? 0) - (b.daysAgo ?? 0));
+  return { upcoming: up, recent: rec };
 }
