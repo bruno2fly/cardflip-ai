@@ -4,10 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { PRODUCTS, SealedProduct, ProductType, Hotness, tcgProductImg, tcgUrl, retailLinks } from "@/lib/products";
 import { supabase } from "@/lib/supabase";
-import { Package2, Lightbulb, CheckCircle2, AlertTriangle, XCircle, ExternalLink, Archive, Loader2, X, Bell } from "lucide-react";
-
-const FEE_RATE = 0.13;        // 13% marketplace fees
-const SEALED_SHIPPING = 8;    // sealed product ships heavier — padded box + tracking
+import { Package2, Lightbulb, CheckCircle2, XCircle, ExternalLink, Archive, Loader2, X, Bell, HelpCircle, Clock, Tag } from "lucide-react";
 
 // Live stock: Best Buy (official API) + Target (unofficial RedSky — often
 // blocked, degrades to Unknown). Walmart/Pokemon Center have no API at all,
@@ -15,6 +12,21 @@ const SEALED_SHIPPING = 8;    // sealed product ships heavier — padded box + t
 type StockState = "in-stock" | "out-of-stock" | "unknown";
 type StockInfo = { status: StockState; url: string | null; price: number | null };
 type StockMaps = { bestbuy: Record<string, StockInfo>; target: Record<string, StockInfo> };
+
+// Decision engine (lib/verdicts.ts) — real BUY/WAIT/SELL/AVOID calls stored
+// in Supabase product_verdicts by the daily compute-verdicts cron. Replaces
+// the old MSRP-based ROI math entirely: that model assumed MSRP was a real
+// obtainable price, which fell apart for hot/sold-out items. Retired for good.
+type VerdictLabel = "BUY" | "WAIT" | "SELL" | "AVOID";
+type VerdictConfidence = "High" | "Medium" | "Low";
+type VerdictRow = { verdict: VerdictLabel; confidence: VerdictConfidence; reason: string };
+
+const verdictStyles: Record<VerdictLabel, { cls: string; chipCls: string; Icon: typeof CheckCircle2 }> = {
+  BUY: { cls: "border-green-800/40 bg-green-950/20", chipCls: "bg-green-500/20 border-green-500/60 text-green-300", Icon: CheckCircle2 },
+  WAIT: { cls: "border-yellow-800/40 bg-yellow-950/10", chipCls: "bg-yellow-500/20 border-yellow-500/60 text-yellow-300", Icon: Clock },
+  SELL: { cls: "border-blue-800/40 bg-blue-950/10", chipCls: "bg-blue-500/20 border-blue-500/60 text-blue-300", Icon: Tag },
+  AVOID: { cls: "border-red-800/40 bg-red-950/10", chipCls: "bg-red-500/20 border-red-500/60 text-red-300", Icon: XCircle },
+};
 
 
 type TypeFilter = "All" | "ETB" | "Booster Box" | "Booster Bundle";
@@ -60,19 +72,6 @@ function ebayUrl(query: string) {
   return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(`${query} sealed`)}&LH_Sold=1&LH_Complete=1`;
 }
 
-// Plain-English verdict for beginners: what do I DO with this product?
-type Verdict = { label: string; cls: string; Icon: typeof CheckCircle2 };
-function verdictFor(roi: number): Verdict {
-  if (roi > 30) return { label: "BUY", cls: "bg-green-500/20 border-green-500/60 text-green-300", Icon: CheckCircle2 };
-  if (roi >= 10) return { label: "WATCH", cls: "bg-yellow-500/20 border-yellow-500/60 text-yellow-300", Icon: AlertTriangle };
-  return { label: "SKIP", cls: "bg-gray-800 border-gray-600 text-gray-400", Icon: XCircle };
-}
-const NO_PRICE_VERDICT: Verdict = {
-  label: "ADD PRICE",
-  cls: "bg-gray-800 border-gray-700 text-gray-500",
-  Icon: AlertTriangle,
-};
-
 export default function SealedTracker() {
   const [filter, setFilter] = useState<TypeFilter>("All");
   const [prices, setPrices] = useState<Record<string, string>>({});
@@ -83,6 +82,35 @@ export default function SealedTracker() {
   const [addSaving, setAddSaving] = useState(false);
   const [added, setAdded] = useState<Record<string, boolean>>({});
   const [discovered, setDiscovered] = useState<SealedProduct[]>([]);
+  const [verdicts, setVerdicts] = useState<Record<string, VerdictRow>>({});
+  const [verdictEngineConfigured, setVerdictEngineConfigured] = useState<boolean | null>(null);
+
+  // Decision engine: read whatever the daily compute-verdicts cron already
+  // stored (real signals only, computed server-side). configured=null means
+  // "still checking"; false means the feature is fully inert (no key yet).
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/verdicts/status");
+        const json = await res.json();
+        setVerdictEngineConfigured(Boolean(json.configured));
+      } catch {
+        setVerdictEngineConfigured(false);
+      }
+      if (!supabase) return;
+      try {
+        const { data, error } = await supabase
+          .from("product_verdicts")
+          .select("product_id, verdict, confidence, reason");
+        if (error || !data) return;
+        const map: Record<string, VerdictRow> = {};
+        for (const row of data) {
+          map[row.product_id] = { verdict: row.verdict, confidence: row.confidence, reason: row.reason };
+        }
+        setVerdicts(map);
+      } catch { /* honest "not available yet" state below covers this */ }
+    })();
+  }, []);
 
   // Auto-discovered products: VERIFIED rows only, deduped against the curated
   // array by TCGPlayer product id. Curated products always stay visible.
@@ -255,13 +283,9 @@ export default function SealedTracker() {
           const seed = seedFromNotes(product.notes);
           const manualStr = raw !== "" ? raw : seed != null ? String(seed) : "";
           const manual = parseFloat(manualStr);
-          const market = live?.market ?? manual;
           const hasPrice = live != null || (!isNaN(manual) && manual > 0);
-          const gross = hasPrice ? market - product.msrp : 0;
-          const net = hasPrice ? market * (1 - FEE_RATE) - SEALED_SHIPPING - product.msrp : 0;
-          const roi = hasPrice ? (net / product.msrp) * 100 : 0;
-          const verdict = hasPrice ? verdictFor(roi) : NO_PRICE_VERDICT;
           const demand = demandBanner[product.hotness];
+          const verdict = verdicts[product.id];
 
           // Real acquisition risk: the market price above is genuinely live/verified
           // data, but MSRP is just the list price -- whether Jason can actually buy
@@ -309,16 +333,46 @@ export default function SealedTracker() {
                 </div>
               </div>
 
-              {/* The story, top to bottom: verdict → demand proof → profit math */}
+              {/* The story, top to bottom: verdict → demand proof → signals */}
               <div className={`flex items-center gap-3 border rounded-lg px-3 py-2.5 mb-3 ${demand.cls}`}>
-                <span className={`flex-shrink-0 flex items-center gap-1 border text-xs font-extrabold px-2.5 py-1 rounded-lg ${verdict.cls}`}>
-                  <verdict.Icon size={12} /> {verdict.label}
-                </span>
+                {verdict ? (
+                  <span className={`flex-shrink-0 flex items-center gap-1 border text-xs font-extrabold px-2.5 py-1 rounded-lg ${verdictStyles[verdict.verdict].chipCls}`}>
+                    {(() => { const { Icon } = verdictStyles[verdict.verdict]; return <Icon size={12} />; })()} {verdict.verdict}
+                  </span>
+                ) : (
+                  <span
+                    title={verdictEngineConfigured === false ? "Decision engine not enabled yet (PERPLEXITY_API_KEY not set)" : "Not yet analyzed — the daily decision engine hasn't run for this product"}
+                    className="flex-shrink-0 flex items-center gap-1 border border-gray-700 bg-gray-800 text-gray-500 text-xs font-extrabold px-2.5 py-1 rounded-lg cursor-help"
+                  >
+                    <HelpCircle size={12} /> ANALYZING
+                  </span>
+                )}
                 <div className="min-w-0">
                   <div className={`text-[11px] font-extrabold tracking-wide ${demand.noteCls}`}>{demand.label}</div>
                   <div className={`text-xs font-medium leading-snug ${demand.noteCls}`}>{product.notes}</div>
                 </div>
               </div>
+
+              {/* Decision engine verdict detail — confidence + real drivers, or an
+                  honest "not available yet" state. The retired MSRP/ROI math never
+                  comes back, even when there's no verdict yet. */}
+              {verdict ? (
+                <div className={`border rounded-lg px-3 py-2.5 mb-3 ${verdictStyles[verdict.verdict].cls}`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-gray-500 text-[11px] font-semibold uppercase tracking-wide">Decision Engine</span>
+                    <span className="text-gray-500 text-[10px] font-medium">Confidence: {verdict.confidence}</span>
+                  </div>
+                  <div className="text-gray-300 text-[11.5px] leading-snug whitespace-pre-line">{verdict.reason}</div>
+                </div>
+              ) : (
+                <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5 mb-3">
+                  <div className="text-gray-500 text-xs">
+                    {verdictEngineConfigured === false
+                      ? "Analysis not yet available — the decision engine isn't enabled yet."
+                      : "Analysis not yet available — waiting on the next daily decision-engine run for this product."}
+                  </div>
+                </div>
+              )}
 
               {/* MSRP + market price input */}
               <div className="grid grid-cols-2 gap-3 mb-3">
@@ -377,39 +431,9 @@ export default function SealedTracker() {
                 )}
               </div>
 
-              {/* Profit math — ONLY shown as actionable when a retailer has verified
-                  real stock at MSRP. Otherwise this would be fake numbers Jason
-                  can't actually realize by buying today, so we don't pretend. */}
-              {hasPrice && msrpVerified ? (
-                <div className="bg-gray-950/60 border border-green-800/40 rounded-lg px-3 py-2.5 mb-4 space-y-1.5">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-500">Gross Profit</span>
-                    <span className={`tabular font-medium ${gross >= 0 ? "text-white" : "text-red-400"}`}>
-                      {gross >= 0 ? "+" : ""}${fmt(gross)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-500">Net Profit (after 13% fees + ${SEALED_SHIPPING} shipping)</span>
-                    <span className={`tabular font-medium ${net > 0 ? "text-green-400" : "text-red-400"}`}>
-                      {net >= 0 ? "+" : ""}${fmt(net)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs pt-1 border-t border-gray-800">
-                    <span className="text-gray-500">ROI</span>
-                    <span className={`tabular font-bold ${roi > 30 ? "text-green-400" : roi >= 10 ? "text-yellow-400" : "text-gray-400"}`}>
-                      {roi >= 0 ? "+" : ""}{roi.toFixed(1)}%
-                    </span>
-                  </div>
-                </div>
-              ) : hasPrice ? (
-                <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5 mb-4">
-                  <div className="text-gray-500 text-xs">
-                    Profit math hidden — no retailer currently confirms real stock at ${fmt(product.msrp)} MSRP, so gross/net/ROI here would assume a price you can&apos;t actually pay right now.
-                  </div>
-                </div>
-              ) : (
+              {!hasPrice && (
                 <p className="text-gray-600 text-xs italic mb-4">
-                  Enter the price you see on eBay (sold listings) to calculate your profit.
+                  Enter the price you see on eBay (sold listings) to track current market value.
                 </p>
               )}
 
