@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { PRODUCTS, ProductType, Hotness } from "@/lib/products";
 import { supabase } from "@/lib/supabase";
-import { Package2, Lightbulb, CheckCircle2, AlertTriangle, XCircle, ExternalLink, Archive, Loader2, X } from "lucide-react";
+import { Package2, Lightbulb, CheckCircle2, AlertTriangle, XCircle, ExternalLink, Archive, Loader2, X, Bell } from "lucide-react";
 
 const FEE_RATE = 0.13;        // 13% marketplace fees
 const SEALED_SHIPPING = 8;    // sealed product ships heavier — padded box + tracking
@@ -15,12 +15,6 @@ const SEALED_SHIPPING = 8;    // sealed product ships heavier — padded box + t
 type StockState = "in-stock" | "out-of-stock" | "unknown";
 type StockInfo = { status: StockState; url: string | null; price: number | null };
 type StockMaps = { bestbuy: Record<string, StockInfo>; target: Record<string, StockInfo> };
-
-const stockBadge: Record<StockState, { label: string; cls: string }> = {
-  "in-stock": { label: "● In Stock", cls: "text-green-400" },
-  "out-of-stock": { label: "● Out of Stock", cls: "text-red-400" },
-  "unknown": { label: "● Unknown", cls: "text-gray-500" },
-};
 
 
 type TypeFilter = "All" | "ETB" | "Booster Box" | "Booster Bundle";
@@ -330,15 +324,11 @@ export default function SealedTracker() {
                 )}
               </div>
 
-              {/* Profit math or prompt */}
-              {hasPrice ? (
-                <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5 mb-4 space-y-1.5">
-                  {!msrpVerified && (
-                    <div className="flex items-start gap-1.5 text-[10.5px] text-red-300 leading-snug pb-1 border-b border-gray-800 mb-1">
-                      <AlertTriangle size={11} className="text-red-400 flex-shrink-0 mt-0.5" />
-                      <span>Math below assumes you can buy at ${fmt(product.msrp)} MSRP — unverified right now, real buy-in may be higher and profit lower.</span>
-                    </div>
-                  )}
+              {/* Profit math — ONLY shown as actionable when a retailer has verified
+                  real stock at MSRP. Otherwise this would be fake numbers Jason
+                  can't actually realize by buying today, so we don't pretend. */}
+              {hasPrice && msrpVerified ? (
+                <div className="bg-gray-950/60 border border-green-800/40 rounded-lg px-3 py-2.5 mb-4 space-y-1.5">
                   <div className="flex justify-between text-xs">
                     <span className="text-gray-500">Gross Profit</span>
                     <span className={`tabular font-medium ${gross >= 0 ? "text-white" : "text-red-400"}`}>
@@ -358,6 +348,12 @@ export default function SealedTracker() {
                     </span>
                   </div>
                 </div>
+              ) : hasPrice ? (
+                <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5 mb-4">
+                  <div className="text-gray-500 text-xs">
+                    Profit math hidden — no retailer currently confirms real stock at ${fmt(product.msrp)} MSRP, so gross/net/ROI here would assume a price you can&apos;t actually pay right now.
+                  </div>
+                </div>
               ) : (
                 <p className="text-gray-600 text-xs italic mb-4">
                   Enter the price you see on eBay (sold listings) to calculate your profit.
@@ -366,28 +362,51 @@ export default function SealedTracker() {
 
               {/* Actions — buying (retail) vs selling (secondary) */}
               <div className="mt-auto space-y-3">
-                <div>
-                  <div className="text-green-500/80 text-[10px] font-semibold uppercase tracking-wide mb-1.5">
-                    Buy at Retail
-                  </div>
-                  {(() => {
-                    const targetStock = stock.target[product.id] ?? { status: "unknown" as const, url: null, price: null };
-                    const bestbuyStock = stock.bestbuy[product.id] ?? { status: "unknown" as const, url: null, price: null };
-                    // Walmart + Pokemon Center have no live check at all — their links are
-                    // always a blind search query. Target/Best Buy are only "verified" when
-                    // the live API actually confirms real online stock right now.
-                    const anyVerifiedInStock = targetStock.status === "in-stock" || bestbuyStock.status === "in-stock";
+                {(() => {
+                  const targetStock = stock.target[product.id] ?? { status: "unknown" as const, url: null, price: null };
+                  const bestbuyStock = stock.bestbuy[product.id] ?? { status: "unknown" as const, url: null, price: null };
+                  const verifiedRetailer = targetStock.status === "in-stock" ? { label: "Target", stock: targetStock, url: targetStock.url ?? product.targetUrl }
+                    : bestbuyStock.status === "in-stock" ? { label: "Best Buy", stock: bestbuyStock, url: bestbuyStock.url ?? product.bestbuyUrl }
+                    : null;
+
+                  // REAL restock confirmed — this is the actionable, trustworthy state.
+                  // The same signal that drives the 30-min restock-alert cron.
+                  if (verifiedRetailer) {
                     return (
-                      <>
-                        {!anyVerifiedInStock && (
-                          <div className="flex items-start gap-1.5 bg-red-950/40 border border-red-700/40 rounded-lg px-2.5 py-1.5 mb-2">
-                            <AlertTriangle size={12} className="text-red-400 flex-shrink-0 mt-0.5" />
-                            <span className="text-red-300 text-[10.5px] leading-snug">
-                              Not currently verified in stock at MSRP — links below may lead to 3rd-party marked-up listings, not real retail stock.
-                            </span>
-                          </div>
-                        )}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div>
+                        <div className="text-green-500/80 text-[10px] font-semibold uppercase tracking-wide mb-1.5">
+                          Verified In Stock — Buy Now
+                        </div>
+                        <a
+                          href={verifiedRetailer.url}
+                          target="_blank" rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 bg-green-500/15 hover:bg-green-500/25 border border-green-500/60 text-green-300 text-sm font-bold px-4 py-2.5 rounded-lg transition-colors"
+                        >
+                          <CheckCircle2 size={14} />
+                          Buy at {verifiedRetailer.label}
+                          {verifiedRetailer.stock.price ? ` — verified $${fmt(verifiedRetailer.stock.price)}` : " — confirmed in stock"}
+                        </a>
+                      </div>
+                    );
+                  }
+
+                  // NOT verified anywhere — don't dress up blind search links as
+                  // "Buy at Retail" actions. Be honest: we're watching, not buying.
+                  return (
+                    <div>
+                      <div className="flex items-start gap-2 bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5 mb-2">
+                        <Bell size={13} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <div className="text-xs text-gray-400 leading-snug">
+                          <span className="text-gray-300 font-semibold">Not verified in stock at MSRP right now.</span>{" "}
+                          We check Best Buy + Target every 30 minutes — you&apos;ll get an email the moment it&apos;s confirmed back in stock. Buying from a search link below risks paying a 3rd-party markup instead of ${fmt(product.msrp)} retail.
+                        </div>
+                      </div>
+                      <details className="group">
+                        <summary className="text-[10.5px] text-gray-600 hover:text-gray-400 cursor-pointer select-none list-none flex items-center gap-1">
+                          <span className="group-open:hidden">Show unverified search links anyway</span>
+                          <span className="hidden group-open:inline">Hide unverified search links</span>
+                        </summary>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
                           <a
                             href={product.walmartUrl}
                             target="_blank" rel="noopener noreferrer"
@@ -397,49 +416,24 @@ export default function SealedTracker() {
                             Walmart
                             <span className="text-[9px] font-medium leading-tight text-red-400">⚠️ Unverified</span>
                           </a>
-                          {(() => {
-                            const s = targetStock;
-                            const badge = stockBadge[s.status];
-                            return (
-                              <a
-                                href={s.url ?? product.targetUrl}
-                                target="_blank" rel="noopener noreferrer"
-                                title={`Target: ${s.status.replace(/-/g, " ")} (live check — unofficial API, may show Unknown)${s.status !== "in-stock" ? " — unverified, may lead to 3rd-party marked-up listings" : ""}`}
-                                className={`flex flex-col items-center justify-center bg-red-500/10 hover:bg-red-500/20 border text-red-400 text-[11px] font-semibold px-2 py-1.5 rounded-lg transition-colors ${
-                                  s.status === "in-stock" ? "border-green-500/50" : "border-red-500/30"
-                                }`}
-                              >
-                                Target
-                                <span className={`text-[9px] font-medium leading-tight ${s.status === "in-stock" ? badge.cls : "text-red-400"}`}>
-                                  {s.status === "in-stock" ? badge.label : "⚠️ Unverified"}
-                                </span>
-                              </a>
-                            );
-                          })()}
-                          {(() => {
-                            const s = bestbuyStock;
-                            const badge = stockBadge[s.status];
-                            const verified = s.status === "in-stock";
-                            return (
-                              <a
-                                href={s.url ?? product.bestbuyUrl}
-                                target="_blank" rel="noopener noreferrer"
-                                title={`Best Buy: ${s.status.replace(/-/g, " ")} (live check)${verified && s.price ? ` — verified price $${fmt(s.price)}` : !verified ? " — unverified, may lead to 3rd-party marked-up listings" : ""}`}
-                                className={`flex flex-col items-center justify-center bg-yellow-500/10 hover:bg-yellow-500/20 border text-yellow-400 text-[11px] font-semibold px-2 py-1.5 rounded-lg transition-colors ${
-                                  verified ? "border-green-500/50" : "border-yellow-500/30"
-                                }`}
-                              >
-                                Best Buy
-                                {verified && s.price ? (
-                                  <span className="text-[9px] font-medium leading-tight text-green-400">● ${fmt(s.price)}</span>
-                                ) : (
-                                  <span className={`text-[9px] font-medium leading-tight ${verified ? badge.cls : "text-red-400"}`}>
-                                    {verified ? badge.label : "⚠️ Unverified"}
-                                  </span>
-                                )}
-                              </a>
-                            );
-                          })()}
+                          <a
+                            href={targetStock.url ?? product.targetUrl}
+                            target="_blank" rel="noopener noreferrer"
+                            title="Target: unofficial API check found no confirmed stock — may lead to 3rd-party marked-up listings"
+                            className="flex flex-col items-center justify-center bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-[11px] font-semibold px-2 py-1.5 rounded-lg transition-colors"
+                          >
+                            Target
+                            <span className="text-[9px] font-medium leading-tight text-red-400">⚠️ Unverified</span>
+                          </a>
+                          <a
+                            href={bestbuyStock.url ?? product.bestbuyUrl}
+                            target="_blank" rel="noopener noreferrer"
+                            title="Best Buy: live check found no confirmed stock — may lead to 3rd-party marked-up listings"
+                            className="flex flex-col items-center justify-center bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 text-[11px] font-semibold px-2 py-1.5 rounded-lg transition-colors"
+                          >
+                            Best Buy
+                            <span className="text-[9px] font-medium leading-tight text-red-400">⚠️ Unverified</span>
+                          </a>
                           <a
                             href={product.pokemonCenterUrl}
                             target="_blank" rel="noopener noreferrer"
@@ -450,10 +444,10 @@ export default function SealedTracker() {
                             <span className="text-[9px] font-medium leading-tight text-red-400">⚠️ Unverified</span>
                           </a>
                         </div>
-                      </>
-                    );
-                  })()}
-                </div>
+                      </details>
+                    </div>
+                  );
+                })()}
                 {/* Bought it? Log it — starts the sealed flip loop */}
                 {addForm?.productId === product.id ? (
                   <div className="flex items-end gap-2 flex-wrap bg-gray-950/60 border border-green-700/30 rounded-lg p-3">
