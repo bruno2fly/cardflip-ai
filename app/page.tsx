@@ -226,6 +226,15 @@ export default function SealedTracker() {
           const verdict = hasPrice ? verdictFor(roi) : NO_PRICE_VERDICT;
           const demand = demandBanner[product.hotness];
 
+          // Real acquisition risk: the market price above is genuinely live/verified
+          // data, but MSRP is just the list price -- whether Jason can actually buy
+          // AT that price right now is a completely separate question. Hot items are
+          // hot precisely because they're hard to find at MSRP, so this check feeds
+          // both the MSRP box and the profit math, not just the retail buttons below.
+          const targetStockTop = stock.target[product.id] ?? { status: "unknown" as const, url: null, price: null };
+          const bestbuyStockTop = stock.bestbuy[product.id] ?? { status: "unknown" as const, url: null, price: null };
+          const msrpVerified = targetStockTop.status === "in-stock" || bestbuyStockTop.status === "in-stock";
+
           return (
             <div key={product.id} className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex flex-col transition-all">
               {/* Product image — big, clickable to inspect at full size */}
@@ -266,8 +275,18 @@ export default function SealedTracker() {
 
               {/* MSRP + market price input */}
               <div className="grid grid-cols-2 gap-3 mb-3">
-                <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5">
-                  <div className="text-gray-500 text-[11px] mb-0.5">MSRP</div>
+                <div className={`bg-gray-950/60 border rounded-lg px-3 py-2.5 ${msrpVerified ? "border-gray-800" : "border-red-800/40"}`}>
+                  <div className="text-gray-500 text-[11px] mb-0.5 flex items-center gap-1.5">
+                    MSRP
+                    {!msrpVerified && (
+                      <span
+                        title="No retailer currently confirms this in stock at MSRP — real-world buy price may be higher"
+                        className="inline-flex items-center gap-1 bg-red-950/80 border border-red-700/50 text-red-400 text-[9px] font-bold px-1.5 py-0.5 rounded-full cursor-help"
+                      >
+                        ⚠️ unverified
+                      </span>
+                    )}
+                  </div>
                   <div className="text-white text-base font-bold tabular">${fmt(product.msrp)} <span className="text-gray-600 text-[11px] font-normal">retail</span></div>
                 </div>
                 {live != null ? (
@@ -314,6 +333,12 @@ export default function SealedTracker() {
               {/* Profit math or prompt */}
               {hasPrice ? (
                 <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5 mb-4 space-y-1.5">
+                  {!msrpVerified && (
+                    <div className="flex items-start gap-1.5 text-[10.5px] text-red-300 leading-snug pb-1 border-b border-gray-800 mb-1">
+                      <AlertTriangle size={11} className="text-red-400 flex-shrink-0 mt-0.5" />
+                      <span>Math below assumes you can buy at ${fmt(product.msrp)} MSRP — unverified right now, real buy-in may be higher and profit lower.</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-xs">
                     <span className="text-gray-500">Gross Profit</span>
                     <span className={`tabular font-medium ${gross >= 0 ? "text-white" : "text-red-400"}`}>
