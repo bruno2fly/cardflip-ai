@@ -25,16 +25,16 @@ export type SealedProduct = {
 };
 
 /** Real sealed-product box photo from TCGPlayer's public image CDN. */
-function tcgProductImg(productId: number) {
+export function tcgProductImg(productId: number) {
   return `https://tcgplayer-cdn.tcgplayer.com/product/${productId}_in_400x400.jpg`;
 }
 
-function tcgUrl(name: string) {
+export function tcgUrl(name: string) {
   return `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(name)}&view=grid`;
 }
 
 /** Public retailer search URLs — where Jason actually BUYS, at MSRP. */
-function retailLinks(name: string): Pick<SealedProduct, "walmartUrl" | "targetUrl" | "bestbuyUrl" | "pokemonCenterUrl"> {
+export function retailLinks(name: string): Pick<SealedProduct, "walmartUrl" | "targetUrl" | "bestbuyUrl" | "pokemonCenterUrl"> {
   const q = encodeURIComponent(name);
   return {
     walmartUrl: `https://www.walmart.com/search?q=${q}`,
