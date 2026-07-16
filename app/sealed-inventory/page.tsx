@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { PRODUCTS } from "@/lib/products";
 import { supabase, DbSealedItem, daysSince } from "@/lib/supabase";
-import { Archive, RefreshCw, Tag, CheckCircle2, Clock, Undo2, Trash2, X } from "lucide-react";
+import { Archive, RefreshCw, Tag, CheckCircle2, Clock, Undo2, Trash2, X, Sparkles, Loader2 } from "lucide-react";
 
 const FEE_RATE = 0.13;      // 13% marketplace fees
 const SEALED_SHIPPING = 8;  // padded box + tracking per unit
@@ -21,6 +21,19 @@ function fmt(n: number) { return n.toLocaleString("en-US", { minimumFractionDigi
 
 const productById = new Map(PRODUCTS.map(p => [p.id, p]));
 
+// Decision engine (lib/verdicts.ts) — real hold/sell calls, computed
+// on-demand per lot (cost basis is per-lot, so this can't be a cron like the
+// product-page verdicts). Gated behind PERPLEXITY_API_KEY server-side;
+// entirely inert client-side until it's configured.
+type InvVerdictLabel = "SELL" | "WAIT";
+type InvVerdictConfidence = "High" | "Medium" | "Low";
+type InvVerdictRow = { verdict: InvVerdictLabel; confidence: InvVerdictConfidence; reason: string };
+
+const invVerdictStyles: Record<InvVerdictLabel, { cls: string; chipCls: string; Icon: typeof CheckCircle2 }> = {
+  SELL: { cls: "border-green-800/40 bg-green-950/20", chipCls: "bg-green-500/20 border-green-500/60 text-green-300", Icon: Tag },
+  WAIT: { cls: "border-yellow-800/40 bg-yellow-950/10", chipCls: "bg-yellow-500/20 border-yellow-500/60 text-yellow-300", Icon: Clock },
+};
+
 export default function SealedInventory() {
   const [items, setItems] = useState<DbSealedItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,6 +43,9 @@ export default function SealedInventory() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [listForm, setListForm] = useState<{ id: string; asking: string; platform: string } | null>(null);
   const [soldForm, setSoldForm] = useState<{ id: string; price: string } | null>(null);
+  const [verdicts, setVerdicts] = useState<Record<string, InvVerdictRow>>({});
+  const [verdictEngineConfigured, setVerdictEngineConfigured] = useState<boolean | null>(null);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const usingSupabase = supabase !== null;
 
   const load = useCallback(async () => {
@@ -61,10 +77,57 @@ export default function SealedInventory() {
     setRefreshing(false);
   }, []);
 
-  useEffect(() => { load(); refreshPrices(); }, [load, refreshPrices]);
+  // Decision engine: pull whatever verdicts already exist for owned/listed
+  // lots (keyed "inv-<sealed_inventory.id>"), and whether the engine is even
+  // configured server-side, so the UI can show an honest state either way.
+  const loadVerdicts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/verdicts/status");
+      const json = await res.json();
+      setVerdictEngineConfigured(Boolean(json.configured));
+    } catch {
+      setVerdictEngineConfigured(false);
+    }
+    if (!supabase) return;
+    try {
+      const { data, error } = await supabase
+        .from("product_verdicts")
+        .select("product_id, verdict, confidence, reason")
+        .like("product_id", "inv-%");
+      if (error || !data) return;
+      const map: Record<string, InvVerdictRow> = {};
+      for (const row of data) {
+        if (row.verdict === "SELL" || row.verdict === "WAIT") {
+          map[row.product_id] = { verdict: row.verdict, confidence: row.confidence, reason: row.reason };
+        }
+      }
+      setVerdicts(map);
+    } catch { /* honest "not analyzed yet" state below covers this */ }
+  }, []);
+
+  useEffect(() => { load(); refreshPrices(); loadVerdicts(); }, [load, refreshPrices, loadVerdicts]);
 
   function marketFor(item: DbSealedItem): number | null {
     return livePrices[item.product_id] ?? (item.current_market != null ? Number(item.current_market) : null);
+  }
+
+  /** On-demand hold/sell analysis for ONE owned/listed lot — real cost basis
+   *  + live market + the same signal set the product-page cron uses. */
+  async function analyze(itemId: string) {
+    setAnalyzingId(itemId);
+    try {
+      const res = await fetch("/api/verdicts/inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId }),
+      });
+      const json = await res.json();
+      setVerdictEngineConfigured(Boolean(json.configured));
+      if (json.configured && json.result) {
+        setVerdicts(prev => ({ ...prev, [`inv-${itemId}`]: json.result }));
+      }
+    } catch { /* honest "not analyzed" state remains */ }
+    setAnalyzingId(null);
   }
 
   async function listIt() {
@@ -298,6 +361,32 @@ export default function SealedInventory() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 ml-auto">
+                  {item.status !== "sold" && (() => {
+                    const v = verdicts[`inv-${item.id}`];
+                    const isAnalyzing = analyzingId === item.id;
+                    if (v) {
+                      const { chipCls, Icon } = invVerdictStyles[v.verdict];
+                      return (
+                        <span
+                          title={v.reason}
+                          className={`flex items-center gap-1.5 border text-xs font-extrabold px-2.5 py-1.5 rounded-lg cursor-help ${chipCls}`}
+                        >
+                          <Icon size={12} /> {v.verdict} · {v.confidence}
+                        </span>
+                      );
+                    }
+                    return (
+                      <button
+                        onClick={() => analyze(item.id)}
+                        disabled={isAnalyzing}
+                        title={verdictEngineConfigured === false ? "Decision engine not enabled yet (PERPLEXITY_API_KEY not set)" : "Analyze real cost basis + live market data for a hold/sell verdict"}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-gray-300 hover:text-white border border-gray-700 hover:border-teal-700/50 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
+                      >
+                        {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                        {isAnalyzing ? "Analyzing…" : "Analyze"}
+                      </button>
+                    );
+                  })()}
                   {usingSupabase && item.status === "owned" && (
                     <button
                       onClick={() => setListForm({ id: item.id, asking: market != null ? String(Math.round(market)) : "", platform: "eBay" })}

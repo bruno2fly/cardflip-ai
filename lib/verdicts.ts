@@ -110,7 +110,13 @@ export function parseVerdictResponse(text: string): VerdictResult | null {
 
   const bullets = reasonMatch[1]
     .split("\n")
-    .map(l => l.replace(/^[-*•]\s*/, "").trim())
+    .map(l => l
+      .replace(/^[-*•]\s*/, "")     // leading bullet marker
+      .replace(/\[\d+\]/g, "")      // Sonar's inline citation markers, e.g. [1][2]
+      .replace(/\*\*/g, "")         // markdown bold
+      .replace(/\s+([.,;:])/g, "$1") // stray space left where a citation was removed
+      .replace(/\s{2,}/g, " ")
+      .trim())
     .filter(Boolean)
     .slice(0, 3);
   if (bullets.length === 0) return null;
