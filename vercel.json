@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/leak-scan",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/discover-products",
+      "schedule": "30 13 * * *"
     }
   ]
 }
