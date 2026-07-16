@@ -124,9 +124,42 @@ export function parseVerdictResponse(text: string): VerdictResult | null {
   return { verdict, confidence, reason: bullets.map(b => `- ${b}`).join("\n") };
 }
 
+/** A source Sonar consulted during its live web search — kept for the audit trail. */
+export type VerdictCitation = { url: string; title?: string };
+
+/**
+ * Pull sources from the raw API response. Perplexity returns both
+ * `search_results` (objects: title/url/date/snippet — richer) and
+ * `citations` (bare URL strings). Prefer search_results, fall back to
+ * citations, tolerate either being absent — [] means "model reported no
+ * sources", never invented.
+ */
+export function extractCitations(raw: unknown): VerdictCitation[] {
+  const json = raw as {
+    search_results?: { url?: unknown; title?: unknown }[] | null;
+    citations?: unknown[] | null;
+  };
+  const out: VerdictCitation[] = [];
+  const seen = new Set<string>();
+
+  for (const r of json?.search_results ?? []) {
+    if (typeof r?.url === "string" && r.url.startsWith("http") && !seen.has(r.url)) {
+      seen.add(r.url);
+      out.push({ url: r.url, ...(typeof r.title === "string" && r.title ? { title: r.title } : {}) });
+    }
+  }
+  for (const u of json?.citations ?? []) {
+    if (typeof u === "string" && u.startsWith("http") && !seen.has(u)) {
+      seen.add(u);
+      out.push({ url: u });
+    }
+  }
+  return out.slice(0, 8);
+}
+
 export type VerdictCallResult =
   | { configured: false }
-  | { configured: true; result: VerdictResult | null; error?: string };
+  | { configured: true; result: VerdictResult | null; citations: VerdictCitation[]; error?: string };
 
 /**
  * Calls Perplexity Sonar with a compact factual prompt built from real
@@ -153,20 +186,21 @@ export async function computeVerdict(inputs: VerdictInputs): Promise<VerdictCall
       }),
     });
     if (!res.ok) {
-      return { configured: true, result: null, error: `Perplexity API responded ${res.status}` };
+      return { configured: true, result: null, citations: [], error: `Perplexity API responded ${res.status}` };
     }
     const json = await res.json();
+    const citations = extractCitations(json);
     const text = json?.choices?.[0]?.message?.content;
     if (typeof text !== "string") {
-      return { configured: true, result: null, error: "No content in Perplexity response" };
+      return { configured: true, result: null, citations, error: "No content in Perplexity response" };
     }
     const parsed = parseVerdictResponse(text);
     if (!parsed) {
-      return { configured: true, result: null, error: "Response did not parse into verdict/confidence/reason" };
+      return { configured: true, result: null, citations, error: "Response did not parse into verdict/confidence/reason" };
     }
-    return { configured: true, result: parsed };
+    return { configured: true, result: parsed, citations };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    return { configured: true, result: null, error: message };
+    return { configured: true, result: null, citations: [], error: message };
   }
 }

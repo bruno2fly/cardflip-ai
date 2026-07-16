@@ -27,7 +27,12 @@ const productById = new Map(PRODUCTS.map(p => [p.id, p]));
 // entirely inert client-side until it's configured.
 type InvVerdictLabel = "SELL" | "WAIT";
 type InvVerdictConfidence = "High" | "Medium" | "Low";
-type InvVerdictRow = { verdict: InvVerdictLabel; confidence: InvVerdictConfidence; reason: string };
+type InvVerdictCitation = { url: string; title?: string };
+type InvVerdictRow = { verdict: InvVerdictLabel; confidence: InvVerdictConfidence; reason: string; citations: InvVerdictCitation[] };
+
+function invCitationLabel(c: InvVerdictCitation): string {
+  try { return new URL(c.url).hostname.replace(/^www\./, ""); } catch { return "source"; }
+}
 
 const invVerdictStyles: Record<InvVerdictLabel, { cls: string; chipCls: string; Icon: typeof CheckCircle2 }> = {
   SELL: { cls: "border-green-800/40 bg-green-950/20", chipCls: "bg-green-500/20 border-green-500/60 text-green-300", Icon: Tag },
@@ -92,13 +97,13 @@ export default function SealedInventory() {
     try {
       const { data, error } = await supabase
         .from("product_verdicts")
-        .select("product_id, verdict, confidence, reason")
+        .select("product_id, verdict, confidence, reason, citations")
         .like("product_id", "inv-%");
       if (error || !data) return;
       const map: Record<string, InvVerdictRow> = {};
       for (const row of data) {
         if (row.verdict === "SELL" || row.verdict === "WAIT") {
-          map[row.product_id] = { verdict: row.verdict, confidence: row.confidence, reason: row.reason };
+          map[row.product_id] = { verdict: row.verdict, confidence: row.confidence, reason: row.reason, citations: Array.isArray(row.citations) ? row.citations : [] };
         }
       }
       setVerdicts(map);
@@ -367,11 +372,28 @@ export default function SealedInventory() {
                     if (v) {
                       const { chipCls, Icon } = invVerdictStyles[v.verdict];
                       return (
-                        <span
-                          title={v.reason}
-                          className={`flex items-center gap-1.5 border text-xs font-extrabold px-2.5 py-1.5 rounded-lg cursor-help ${chipCls}`}
-                        >
-                          <Icon size={12} /> {v.verdict} · {v.confidence}
+                        <span className="flex flex-col items-end gap-1">
+                          <span
+                            title={v.reason}
+                            className={`flex items-center gap-1.5 border text-xs font-extrabold px-2.5 py-1.5 rounded-lg cursor-help ${chipCls}`}
+                          >
+                            <Icon size={12} /> {v.verdict} · {v.confidence}
+                          </span>
+                          {v.citations.length > 0 && (
+                            <span className="flex items-center gap-1.5 flex-wrap justify-end">
+                              {v.citations.slice(0, 3).map((c, i) => (
+                                <a
+                                  key={c.url}
+                                  href={c.url}
+                                  target="_blank" rel="noopener noreferrer"
+                                  title={c.title ?? c.url}
+                                  className="text-[10px] text-gray-500 hover:text-yellow-400 underline decoration-gray-700 underline-offset-2 transition-colors"
+                                >
+                                  [{i + 1}] {invCitationLabel(c)}
+                                </a>
+                              ))}
+                            </span>
+                          )}
                         </span>
                       );
                     }

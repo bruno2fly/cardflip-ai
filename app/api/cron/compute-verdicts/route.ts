@@ -128,6 +128,7 @@ export async function GET() {
           reason: call.result.reason,
           computed_at: new Date().toISOString(),
           inputs_snapshot: inputs,
+          citations: call.citations,
         });
         if (error) { failed++; errors.push(error.message); } else { computed++; }
       } else {

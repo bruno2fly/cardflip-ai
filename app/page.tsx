@@ -19,7 +19,13 @@ type StockMaps = { bestbuy: Record<string, StockInfo>; target: Record<string, St
 // obtainable price, which fell apart for hot/sold-out items. Retired for good.
 type VerdictLabel = "BUY" | "WAIT" | "SELL" | "AVOID";
 type VerdictConfidence = "High" | "Medium" | "Low";
-type VerdictRow = { verdict: VerdictLabel; confidence: VerdictConfidence; reason: string };
+type VerdictCitation = { url: string; title?: string };
+type VerdictRow = { verdict: VerdictLabel; confidence: VerdictConfidence; reason: string; citations: VerdictCitation[] };
+
+/** Short display label for a source link, e.g. "tcgplayer.com" */
+function citationLabel(c: VerdictCitation): string {
+  try { return new URL(c.url).hostname.replace(/^www\./, ""); } catch { return "source"; }
+}
 
 const verdictStyles: Record<VerdictLabel, { cls: string; chipCls: string; Icon: typeof CheckCircle2 }> = {
   BUY: { cls: "border-green-800/40 bg-green-950/20", chipCls: "bg-green-500/20 border-green-500/60 text-green-300", Icon: CheckCircle2 },
@@ -101,11 +107,11 @@ export default function SealedTracker() {
       try {
         const { data, error } = await supabase
           .from("product_verdicts")
-          .select("product_id, verdict, confidence, reason");
+          .select("product_id, verdict, confidence, reason, citations");
         if (error || !data) return;
         const map: Record<string, VerdictRow> = {};
         for (const row of data) {
-          map[row.product_id] = { verdict: row.verdict, confidence: row.confidence, reason: row.reason };
+          map[row.product_id] = { verdict: row.verdict, confidence: row.confidence, reason: row.reason, citations: Array.isArray(row.citations) ? row.citations : [] };
         }
         setVerdicts(map);
       } catch { /* honest "not available yet" state below covers this */ }
@@ -363,6 +369,22 @@ export default function SealedTracker() {
                     <span className="text-gray-500 text-[10px] font-medium">Confidence: {verdict.confidence}</span>
                   </div>
                   <div className="text-gray-300 text-[11.5px] leading-snug whitespace-pre-line">{verdict.reason}</div>
+                  {verdict.citations.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2 pt-1.5 border-t border-gray-800/60">
+                      <span className="text-gray-600 text-[10px] font-medium uppercase tracking-wide">Sources</span>
+                      {verdict.citations.map((c, i) => (
+                        <a
+                          key={c.url}
+                          href={c.url}
+                          target="_blank" rel="noopener noreferrer"
+                          title={c.title ?? c.url}
+                          className="text-[10px] text-gray-500 hover:text-yellow-400 underline decoration-gray-700 underline-offset-2 transition-colors"
+                        >
+                          [{i + 1}] {citationLabel(c)}
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5 mb-3">

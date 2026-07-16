@@ -107,12 +107,13 @@ export async function POST(req: Request) {
       reason: call.result.reason,
       computed_at: new Date().toISOString(),
       inputs_snapshot: inputs,
+      citations: call.citations,
     });
     if (upsertError) {
       return NextResponse.json({ configured: true, error: upsertError.message }, { status: 502 });
     }
 
-    return NextResponse.json({ configured: true, productId, result: call.result });
+    return NextResponse.json({ configured: true, productId, result: { ...call.result, citations: call.citations } });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: `Verdict computation failed: ${message}` }, { status: 502 });
