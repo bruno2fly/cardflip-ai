@@ -20,6 +20,7 @@ export type ProductStock = {
   status: StockState;
   sku: string | null;
   url: string | null;   // direct Best Buy product page when matched
+  price: number | null; // verified live sale price (Best Buy only, for now) — null = unverified
 };
 
 export type StockResult = {
@@ -39,6 +40,7 @@ type BBProduct = {
   name: string;
   onlineAvailability: boolean;
   url: string;
+  salePrice?: number;
 };
 
 async function checkOne(apiKey: string, productId: string, name: string): Promise<ProductStock> {
@@ -49,22 +51,25 @@ async function checkOne(apiKey: string, productId: string, name: string): Promis
       .filter(Boolean)
       .map(w => `search=${encodeURIComponent(w.toLowerCase())}`)
       .join("&");
-    const url = `${BB_API}(${terms})?apiKey=${apiKey}&format=json&show=sku,name,onlineAvailability,url&pageSize=3`;
+    const url = `${BB_API}(${terms})?apiKey=${apiKey}&format=json&show=sku,name,onlineAvailability,url,salePrice&pageSize=3`;
 
     const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) return { productId, status: "unknown", sku: null, url: null };
+    if (!res.ok) return { productId, status: "unknown", sku: null, url: null, price: null };
     const json = await res.json();
     const match: BBProduct | undefined = (json.products ?? [])[0];
 
-    if (!match) return { productId, status: "unknown", sku: null, url: null };
+    if (!match) return { productId, status: "unknown", sku: null, url: null, price: null };
     return {
       productId,
       status: match.onlineAvailability ? "in-stock" : "out-of-stock",
       sku: String(match.sku),
       url: match.url ?? null,
+      // only trust the price when it's actually purchasable online — an
+      // out-of-stock listing's "salePrice" is not a real buyable price
+      price: match.onlineAvailability && typeof match.salePrice === "number" ? match.salePrice : null,
     };
   } catch {
-    return { productId, status: "unknown", sku: null, url: null };
+    return { productId, status: "unknown", sku: null, url: null, price: null };
   }
 }
 
@@ -122,23 +127,26 @@ async function checkOneTarget(productId: string, name: string): Promise<ProductS
       },
     });
     // 403 = Akamai bot wall (expected from datacenter IPs) → unknown, not an error
-    if (!res.ok) return { productId, status: "unknown", sku: null, url: null };
+    if (!res.ok) return { productId, status: "unknown", sku: null, url: null, price: null };
     const json = await res.json();
     const products: unknown[] = json?.data?.search?.products ?? [];
     const first = products[0] as {
       tcin?: string;
       item?: { enrichment?: { buy_url?: string } };
     } | undefined;
-    if (!first?.tcin) return { productId, status: "unknown", sku: null, url: null };
+    if (!first?.tcin) return { productId, status: "unknown", sku: null, url: null, price: null };
 
     return {
       productId,
       status: extractAvailability(first),
       sku: String(first.tcin),
       url: first.item?.enrichment?.buy_url ?? null,
+      // Target/RedSky pricing field isn't parsed yet — never claim a
+      // verified retail price we don't actually have.
+      price: null,
     };
   } catch {
-    return { productId, status: "unknown", sku: null, url: null };
+    return { productId, status: "unknown", sku: null, url: null, price: null };
   } finally {
     clearTimeout(timer);
   }
@@ -184,7 +192,7 @@ export async function getBestBuyStock(
     return {
       configured: false,
       checkedAt: Date.now(),
-      statuses: products.map(p => ({ productId: p.id, status: "unknown" as const, sku: null, url: null })),
+      statuses: products.map(p => ({ productId: p.id, status: "unknown" as const, sku: null, url: null, price: null })),
     };
   }
 

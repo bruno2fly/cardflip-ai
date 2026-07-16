@@ -17,7 +17,7 @@ function stockEmailHtml(flips: Flip[]): string {
     <tr>
       <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;">
         <div style="font-weight:600;color:#111827;">${f.name}</div>
-        <div style="font-size:12px;color:#6b7280;">MSRP $${fmt(f.msrp)} · ${RETAILER_LABEL[f.retailer]}</div>
+        <div style="font-size:12px;color:#6b7280;">MSRP $${fmt(f.msrp)} · ${RETAILER_LABEL[f.retailer]}${f.price ? ` · verified $${fmt(f.price)}` : ""}</div>
       </td>
       <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;text-align:center;">
         <a href="${f.url ?? (f.retailer === "target" ? "https://www.target.com" : "https://www.bestbuy.com")}" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-size:12px;font-weight:700;padding:8px 16px;border-radius:6px;">Buy at ${RETAILER_LABEL[f.retailer]} →</a>
