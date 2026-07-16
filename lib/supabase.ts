@@ -8,8 +8,23 @@ const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
  * gracefully fall back (mock data / localStorage) instead of crashing.
  * Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local.
  */
+/**
+ * IMPORTANT: the custom fetch below is load-bearing. Next.js 14 caches
+ * fetch() GETs in its persistent data cache — including supabase-js
+ * .select() calls — even in routes marked `dynamic = "force-dynamic"`.
+ * Root cause of the compute-verdicts bug where the freshness query
+ * replayed its first-ever (empty) response forever and the cron
+ * recomputed the same 12 products on every run. cache:"no-store" opts
+ * every Supabase request out of that cache, server and client alike.
+ */
 export const supabase: SupabaseClient | null =
-  url && anonKey ? createClient(url, anonKey) : null;
+  url && anonKey
+    ? createClient(url, anonKey, {
+        global: {
+          fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+        },
+      })
+    : null;
 
 export type CardStatus = "owned" | "active" | "sold";
 

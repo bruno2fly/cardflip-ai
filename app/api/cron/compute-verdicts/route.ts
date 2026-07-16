@@ -26,7 +26,12 @@ type Target = {
  * stock, release timing, discovery source). Entirely inert without
  * PERPLEXITY_API_KEY — reports { configured: false } and does nothing.
  */
-export async function GET() {
+export async function GET(req: Request) {
+  // ?force=true — ignore the 24h freshness window and work through ALL
+  // targets (never-computed first, then stalest), so repeated manual runs
+  // make real progress toward full coverage instead of waiting days.
+  const force = new URL(req.url).searchParams.get("force") === "true"
+    || new URL(req.url).searchParams.get("all") === "true";
   // cheap local check — no need to spend an API call just to test configuration
   if (!process.env.PERPLEXITY_API_KEY) {
     return NextResponse.json({
@@ -63,16 +68,37 @@ export async function GET() {
     }
 
     // --- staleness: only recompute verdicts older than 24h (or missing) ---
-    const { data: existingVerdicts } = await supabase
+    // FAIL LOUD if this query errors: silently treating "couldn't read
+    // existing verdicts" as "no fresh verdicts" is what let the cron burn
+    // API budget recomputing the same batch (see lib/supabase.ts note on
+    // the Next fetch-cache root cause).
+    const { data: existingVerdicts, error: freshnessError } = await supabase
       .from("product_verdicts")
       .select("product_id, computed_at");
+    if (freshnessError) {
+      return NextResponse.json(
+        { error: `Could not read existing verdicts (refusing to guess): ${freshnessError.message}` },
+        { status: 502 }
+      );
+    }
+    const computedAtById = new Map(
+      (existingVerdicts ?? []).map(v => [v.product_id, new Date(v.computed_at).getTime()])
+    );
     const staleCutoff = Date.now() - 24 * 60 * 60 * 1000;
     const freshIds = new Set(
-      (existingVerdicts ?? [])
-        .filter(v => new Date(v.computed_at).getTime() > staleCutoff)
-        .map(v => v.product_id)
+      Array.from(computedAtById.entries())
+        .filter(([, t]) => t > staleCutoff)
+        .map(([id]) => id)
     );
-    const due = targets.filter(t => !freshIds.has(t.productId)).slice(0, MAX_VERDICTS_PER_RUN);
+
+    // Progressive ordering either way: never-computed first, then stalest.
+    // Repeated runs always advance coverage instead of retreading the
+    // front of the array.
+    const candidates = force ? [...targets] : targets.filter(t => !freshIds.has(t.productId));
+    candidates.sort((a, b) =>
+      (computedAtById.get(a.productId) ?? 0) - (computedAtById.get(b.productId) ?? 0)
+    );
+    const due = candidates.slice(0, MAX_VERDICTS_PER_RUN);
 
     if (due.length === 0) {
       return NextResponse.json({ configured: true, checked: targets.length, dueForRecompute: 0, computed: 0 });
@@ -141,8 +167,10 @@ export async function GET() {
 
     return NextResponse.json({
       configured: true,
+      force,
       checked: targets.length,
       dueForRecompute: due.length,
+      dueIds: due.map(t => t.productId),
       computed,
       failed,
       errors: errors.slice(0, 5),
