@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const list = PRODUCTS.map(p => ({ id: p.id, name: p.name }));
+    const list = PRODUCTS.map(p => ({ id: p.id, name: p.name, tcin: p.targetTcin }));
     const [bestbuy, target] = await Promise.all([
       getBestBuyStock(list, true),
       getTargetStock(list, true),
