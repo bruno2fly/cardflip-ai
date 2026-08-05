@@ -128,28 +128,89 @@ export function parseVerdictResponse(text: string): VerdictResult | null {
 export type VerdictCitation = { url: string; title?: string };
 
 /**
- * Pull sources from the raw API response. Perplexity returns both
- * `search_results` (objects: title/url/date/snippet — richer) and
- * `citations` (bare URL strings). Prefer search_results, fall back to
- * citations, tolerate either being absent — [] means "model reported no
- * sources", never invented.
+ * Domains that are actually about TCG pricing / retail stock / product info.
+ * Sonar does its own live web search while writing the verdict, which often
+ * surfaces generic junk (youtube, github, app-store links) that isn't
+ * evidence of anything. We only keep sources from these.
  */
-export function extractCitations(raw: unknown): VerdictCitation[] {
+const CITATION_ALLOWLIST = new Set([
+  "tcgplayer.com", "pricecharting.com", "ebay.com", "target.com", "bestbuy.com",
+  "walmart.com", "pokemoncenter.com", "pokemon.com", "reddit.com",
+  "pokeguardian.com", "pokebeach.com", "serebii.net",
+  // additional obviously-relevant TCG price/marketplace sources
+  "cardmarket.com", "tcgcollector.com", "pkmncards.com",
+]);
+
+/**
+ * Strong pricing authorities: inherently product-price sources, so they don't
+ * need to name-match the product to be relevant.
+ */
+const CITATION_STRONG_AUTHORITY = new Set(["tcgplayer.com", "pricecharting.com"]);
+
+/** Generic product-type words that don't identify a SPECIFIC product. */
+const NAME_STOPWORDS = new Set([
+  "pokemon", "pokémon", "tcg", "trading", "card", "game", "scarlet", "violet",
+  "elite", "trainer", "box", "booster", "bundle", "premium", "collection",
+  "pack", "the", "and", "of", "sv", "set",
+]);
+
+/** Registrable domain of a URL (strip www / any subdomain). null if unparseable. */
+function registrableDomain(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    const parts = host.split(".");
+    return parts.length >= 2 ? parts.slice(-2).join(".") : host;
+  } catch { return null; }
+}
+
+/** Discriminating tokens from a product name (drops generic stopwords). */
+function nameTokens(productName: string): string[] {
+  return productName
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(t => t.length >= 3 && !NAME_STOPWORDS.has(t));
+}
+
+/**
+ * Pull sources from the raw API response and KEEP ONLY ones that are actually
+ * relevant to this product's price/stock:
+ *   1. hostname must be on the pricing/stock allowlist (drops youtube/github/etc.)
+ *   2. AND either the title/URL contains a discriminating word from the product
+ *      name, OR the source is a strong price authority (tcgplayer/pricecharting).
+ *
+ * Perplexity returns both `search_results` (title+url) and `citations` (bare
+ * urls); we read both. If nothing survives the filter we return [] — showing
+ * no sources is more honest than showing wrong ones. Never fabricates.
+ */
+export function extractCitations(raw: unknown, productName: string): VerdictCitation[] {
   const json = raw as {
     search_results?: { url?: unknown; title?: unknown }[] | null;
     citations?: unknown[] | null;
   };
+  const tokens = nameTokens(productName);
+
+  const relevant = (url: string, title?: string): boolean => {
+    const domain = registrableDomain(url);
+    if (!domain || !CITATION_ALLOWLIST.has(domain)) return false;
+    if (CITATION_STRONG_AUTHORITY.has(domain)) return true;
+    if (tokens.length === 0) return true; // no discriminating tokens to test → allow on-allowlist source
+    const hay = `${title ?? ""} ${url}`.toLowerCase();
+    return tokens.some(t => hay.includes(t));
+  };
+
   const out: VerdictCitation[] = [];
   const seen = new Set<string>();
 
   for (const r of json?.search_results ?? []) {
-    if (typeof r?.url === "string" && r.url.startsWith("http") && !seen.has(r.url)) {
-      seen.add(r.url);
-      out.push({ url: r.url, ...(typeof r.title === "string" && r.title ? { title: r.title } : {}) });
+    const url = typeof r?.url === "string" ? r.url : "";
+    const title = typeof r?.title === "string" && r.title ? r.title : undefined;
+    if (url.startsWith("http") && !seen.has(url) && relevant(url, title)) {
+      seen.add(url);
+      out.push({ url, ...(title ? { title } : {}) });
     }
   }
   for (const u of json?.citations ?? []) {
-    if (typeof u === "string" && u.startsWith("http") && !seen.has(u)) {
+    if (typeof u === "string" && u.startsWith("http") && !seen.has(u) && relevant(u)) {
       seen.add(u);
       out.push({ url: u });
     }
@@ -189,7 +250,7 @@ export async function computeVerdict(inputs: VerdictInputs): Promise<VerdictCall
       return { configured: true, result: null, citations: [], error: `Perplexity API responded ${res.status}` };
     }
     const json = await res.json();
-    const citations = extractCitations(json);
+    const citations = extractCitations(json, inputs.productName);
     const text = json?.choices?.[0]?.message?.content;
     if (typeof text !== "string") {
       return { configured: true, result: null, citations, error: "No content in Perplexity response" };
