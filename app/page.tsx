@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { PRODUCTS, SealedProduct, ProductType, Hotness, tcgProductImg, tcgUrl, retailLinks } from "@/lib/products";
 import { supabase } from "@/lib/supabase";
-import { Package2, Lightbulb, CheckCircle2, XCircle, ExternalLink, Archive, Loader2, X, Bell, HelpCircle, Clock, Tag } from "lucide-react";
+import { Package2, Lightbulb, CheckCircle2, XCircle, ExternalLink, Archive, Loader2, X, Bell, HelpCircle, Clock, Tag, Zap } from "lucide-react";
 
 // Live stock: Best Buy (official API) + Target (unofficial RedSky — often
 // blocked, degrades to Unknown). Walmart/Pokemon Center have no API at all,
@@ -62,6 +62,42 @@ const demandBanner: Record<Hotness, { label: string; cls: string; noteCls: strin
 
 function fmt(n: number) { return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+// Quick Buy Info — Jason's own shipping/billing reference for fast manual paste.
+// NEVER contains payment card data.
+type CheckoutProfile = {
+  id?: number;
+  full_name?: string; email?: string; phone?: string;
+  address_line1?: string; address_line2?: string;
+  city?: string; state_region?: string; postal_code?: string;
+  country?: string; notes?: string; updated_at?: string;
+};
+const EMPTY_PROFILE: CheckoutProfile = { country: "US" };
+
+function profileHasData(p: CheckoutProfile | null): boolean {
+  return Boolean(p && (p.full_name || p.address_line1 || p.email || p.phone));
+}
+/** One-line address for fast paste into single-line address fields. */
+function profileOneLine(p: CheckoutProfile): string {
+  return [p.address_line1, p.address_line2, p.city, p.state_region, p.postal_code, p.country]
+    .filter(Boolean).join(", ");
+}
+/** Full block for paste into multi-line / multi-field checkout forms. */
+function profileBlock(p: CheckoutProfile): string {
+  return [
+    p.full_name,
+    p.address_line1,
+    p.address_line2,
+    [p.city, p.state_region, p.postal_code].filter(Boolean).join(", "),
+    p.country,
+    p.phone,
+    p.email,
+  ].filter(Boolean).join("\n");
+}
+/** Direct Target product page when a TCIN is pinned; else the search URL. */
+function targetDirectUrl(p: SealedProduct): string {
+  return p.targetTcin ? `https://www.target.com/p/-/A-${p.targetTcin}` : p.targetUrl;
+}
+
 /**
  * Smart manual-price seed: pull the midpoint of a "$150–200+" style range
  * out of the demand note, so the manual field starts from a real anchor
@@ -90,6 +126,39 @@ export default function SealedTracker() {
   const [discovered, setDiscovered] = useState<SealedProduct[]>([]);
   const [verdicts, setVerdicts] = useState<Record<string, VerdictRow>>({});
   const [verdictEngineConfigured, setVerdictEngineConfigured] = useState<boolean | null>(null);
+  // Quick Buy Info: one global shipping/billing profile (no card data ever)
+  const [profile, setProfile] = useState<CheckoutProfile | null>(null);
+  const [quickBuyId, setQuickBuyId] = useState<string | null>(null);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState<CheckoutProfile>(EMPTY_PROFILE);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  // Load the single checkout profile row (id = 1)
+  useEffect(() => {
+    if (!supabase) return;
+    (async () => {
+      const { data } = await supabase.from("checkout_profile").select("*").eq("id", 1).maybeSingle();
+      if (data) { setProfile(data as CheckoutProfile); setProfileForm(data as CheckoutProfile); }
+    })();
+  }, []);
+
+  async function saveProfile() {
+    if (!supabase) return;
+    setProfileSaving(true);
+    const row = { ...profileForm, id: 1, updated_at: new Date().toISOString() };
+    const { error } = await supabase.from("checkout_profile").upsert(row, { onConflict: "id" });
+    if (!error) { setProfile(row); setEditingProfile(false); }
+    setProfileSaving(false);
+  }
+
+  async function copyText(text: string, key: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied(c => (c === key ? null : c)), 1400);
+    } catch { /* clipboard unavailable — user can still select manually */ }
+  }
 
   // Decision engine: read whatever the daily compute-verdicts cron already
   // stored (real signals only, computed server-side). configured=null means
@@ -497,7 +566,7 @@ export default function SealedTracker() {
                         <Bell size={13} className="text-yellow-400 flex-shrink-0 mt-0.5" />
                         <div className="text-xs text-gray-400 leading-snug">
                           <span className="text-gray-300 font-semibold">Not verified in stock at MSRP right now.</span>{" "}
-                          We check Best Buy + Target every 30 minutes — you&apos;ll get an email the moment it&apos;s confirmed back in stock. Buying from a search link below risks paying a 3rd-party markup instead of ${fmt(product.msrp)} retail.
+                          We check Best Buy + Target every ~2 minutes — you&apos;ll get an email the moment it&apos;s confirmed back in stock. Buying from a search link below risks paying a 3rd-party markup instead of ${fmt(product.msrp)} retail.
                         </div>
                       </div>
                       <details className="group">
@@ -516,7 +585,7 @@ export default function SealedTracker() {
                             <span className="text-[9px] font-medium leading-tight text-red-400">⚠️ Unverified</span>
                           </a>
                           <a
-                            href={targetStock.url ?? product.targetUrl}
+                            href={targetStock.url ?? targetDirectUrl(product)}
                             target="_blank" rel="noopener noreferrer"
                             title="Target: unofficial API check found no confirmed stock — may lead to 3rd-party marked-up listings"
                             className="flex flex-col items-center justify-center bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-[11px] font-semibold px-2 py-1.5 rounded-lg transition-colors"
@@ -593,6 +662,85 @@ export default function SealedTracker() {
                     <Archive size={12} /> Bought it? Add to Inventory
                   </button>
                 )}
+
+                {/* Quick Buy Info — copy-paste shipping/billing at checkout speed */}
+                <div>
+                  <button
+                    onClick={() => { setQuickBuyId(quickBuyId === product.id ? null : product.id); setEditingProfile(false); }}
+                    className="w-full flex items-center justify-center gap-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+                  >
+                    <Zap size={12} className="text-yellow-400" /> Quick Buy Info
+                  </button>
+
+                  {quickBuyId === product.id && (
+                    <div className="mt-2 bg-gray-950/60 border border-gray-800 rounded-lg p-3">
+                      {!supabase ? (
+                        <p className="text-orange-400/80 text-[11px]">Run supabase/checkout_profile.sql and configure Supabase to use Quick Buy Info.</p>
+                      ) : editingProfile || !profileHasData(profile) ? (
+                        <div className="space-y-2">
+                          <div className="text-gray-400 text-[11px] font-semibold">Your shipping / billing info <span className="text-gray-600 font-normal">(no card data — name + address only)</span></div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {([
+                              ["full_name", "Full name", 2], ["address_line1", "Address line 1", 2],
+                              ["address_line2", "Address line 2 (opt)", 2], ["city", "City", 1],
+                              ["state_region", "State", 1], ["postal_code", "ZIP", 1], ["country", "Country", 1],
+                              ["phone", "Phone", 1], ["email", "Email", 1],
+                            ] as [keyof CheckoutProfile, string, number][]).map(([key, label, span]) => (
+                              <input
+                                key={key}
+                                value={(profileForm[key] as string) ?? ""}
+                                onChange={e => setProfileForm({ ...profileForm, [key]: e.target.value })}
+                                placeholder={label}
+                                className={`${span === 2 ? "col-span-2" : ""} bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400/50`}
+                              />
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={saveProfile} disabled={profileSaving}
+                              className="flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                              {profileSaving && <Loader2 size={11} className="animate-spin" />} Save
+                            </button>
+                            {profileHasData(profile) && (
+                              <button onClick={() => { setEditingProfile(false); setProfileForm(profile ?? EMPTY_PROFILE); }}
+                                className="text-gray-500 hover:text-white text-xs px-3 py-1.5 border border-gray-700 rounded-lg">Cancel</button>
+                            )}
+                          </div>
+                        </div>
+                      ) : profile ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-400 text-[11px] font-semibold">Paste at checkout</span>
+                            <button onClick={() => { setEditingProfile(true); setProfileForm(profile); }} className="text-gray-500 hover:text-yellow-400 text-[10.5px] underline">Edit</button>
+                          </div>
+                          <pre className="whitespace-pre-wrap text-gray-200 text-[11.5px] leading-snug bg-gray-900/60 rounded-md px-2.5 py-2 border border-gray-800">{profileBlock(profile)}</pre>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button onClick={() => copyText(profileBlock(profile), `${product.id}-all`)}
+                              className="bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/30 text-yellow-400 text-[10.5px] font-semibold px-2.5 py-1 rounded-full transition-colors">
+                              {copied === `${product.id}-all` ? "✓ Copied" : "Copy all"}
+                            </button>
+                            <button onClick={() => copyText(profileOneLine(profile), `${product.id}-addr`)}
+                              className="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-[10.5px] font-medium px-2.5 py-1 rounded-full transition-colors">
+                              {copied === `${product.id}-addr` ? "✓" : "Address (1 line)"}
+                            </button>
+                            {profile.email && (
+                              <button onClick={() => copyText(profile.email ?? "", `${product.id}-email`)}
+                                className="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-[10.5px] font-medium px-2.5 py-1 rounded-full transition-colors">
+                                {copied === `${product.id}-email` ? "✓" : "Email"}
+                              </button>
+                            )}
+                            {profile.phone && (
+                              <button onClick={() => copyText(profile.phone ?? "", `${product.id}-phone`)}
+                                className="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-[10.5px] font-medium px-2.5 py-1 rounded-full transition-colors">
+                                {copied === `${product.id}-phone` ? "✓" : "Phone"}
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-gray-600 text-[10px]">No payment card data is stored — you enter the card yourself at checkout.</p>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
 
                 <div>
                   <div className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1.5">
