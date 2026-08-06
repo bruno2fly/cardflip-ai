@@ -4,19 +4,40 @@ import { supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
+// Per-source display name + button colour so every source (not just Serebii)
+// is labeled correctly in the email.
+const SOURCE_META: Record<string, { label: string; color: string }> = {
+  "pokemon-official": { label: "pokemon.com", color: "#059669" },
+  serebii: { label: "Serebii", color: "#7c3aed" },
+  pokeleaks: { label: "r/PokeLeaks", color: "#ea580c" },
+  pokebeach: { label: "PokeBeach", color: "#7c3aed" },
+};
+function sourceMeta(source: string) {
+  return SOURCE_META[source] ?? { label: source, color: "#7c3aed" };
+}
+/** Human confidence phrase shown per row. */
+function confidencePhrase(i: IntelItem): string {
+  if (i.confidence === "official") return "OFFICIAL (pokemon.com)";
+  if (i.confidence === "unverified") return `unverified leak (${sourceMeta(i.source).label})`;
+  return `early intel (${sourceMeta(i.source).label})`;
+}
+
 function leakEmailHtml(items: IntelItem[]): string {
-  const rows = items.map(i => `
+  const rows = items.map(i => {
+    const meta = sourceMeta(i.source);
+    return `
     <tr>
       <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;">
         <div style="font-weight:700;color:#111827;font-size:15px;">${i.setName}</div>
         <div style="font-size:12px;color:#6b7280;margin-top:2px;">
-          ${i.releaseDate ? `Releases ${i.releaseDate}` : "Release date not announced yet"}${i.detail ? ` · ${i.detail}` : ""} · ${i.confidence === "official" ? "OFFICIAL (pokemon.com)" : `early intel (${i.source})`}
+          ${i.releaseDate ? `Releases ${i.releaseDate}` : "Release date not announced yet"}${i.detail ? ` · ${i.detail}` : ""} · ${confidencePhrase(i)}
         </div>
       </td>
       <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;text-align:center;">
-        <a href="${i.sourceUrl}" style="display:inline-block;background:${i.confidence === "official" ? "#059669" : "#7c3aed"};color:#ffffff;text-decoration:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;">${i.confidence === "official" ? "pokemon.com" : "Serebii"} →</a>
+        <a href="${i.sourceUrl}" style="display:inline-block;background:${meta.color};color:#ffffff;text-decoration:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;">${meta.label} →</a>
       </td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 
   return `<!DOCTYPE html>
 <html>
@@ -25,7 +46,7 @@ function leakEmailHtml(items: IntelItem[]): string {
       <div style="background:#111827;padding:20px 24px;">
         <div style="color:#facc15;font-size:18px;font-weight:800;">🔮 CardFlip AI — Early Set Intel</div>
         <div style="color:#9ca3af;font-size:13px;margin-top:4px;">
-          ${items.length} new set reveal${items.length === 1 ? "" : "s"} spotted (pokemon.com official + Serebii intel) — weeks before the official API lists ${items.length === 1 ? "it" : "them"}.
+          ${items.length} new set reveal${items.length === 1 ? "" : "s"} spotted (pokemon.com official + Serebii + r/PokeLeaks intel) — often weeks before the official API lists ${items.length === 1 ? "it" : "them"}.
         </div>
       </div>
       <table style="width:100%;border-collapse:collapse;">${rows}</table>
@@ -58,7 +79,7 @@ async function sendLeakEmail(items: IntelItem[]): Promise<boolean> {
 /**
  * GET /api/cron/leak-scan — every 6 hours (see vercel.json).
  * Checks all working intel sources (pokemon.com curated officials + Serebii
- * scrape); emails Jason the moment a NEW set shows
+ * scrape + r/PokeLeaks Atom feed); emails Jason the moment a NEW set shows
  * up. Dedup via Supabase `leak_intel_log` (unique per normalized set name)
  * so each reveal alerts exactly once, ever.
  */

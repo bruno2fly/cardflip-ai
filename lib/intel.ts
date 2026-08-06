@@ -6,6 +6,10 @@
  *                      so it feeds in via the curated lib/officialAnnouncements.ts
  *                      (primary source → confidence "official")
  *   serebii          — live scrape works (lib/leakIntel.ts) → "early-intel"
+ *   pokeleaks        — r/PokeLeaks Atom feed works from cloud IPs
+ *                      (lib/pokeLeaksIntel.ts) → "early-intel" / "unverified"
+ *                      per-post, derived from title signals (flair isn't in the
+ *                      feed; Reddit's .json endpoint is 403-walled)
  *   pokebeach        — NOT WIRED: Cloudflare 403 challenge from cloud IPs,
  *                      verified live. Shipping a fetcher would be dead code
  *                      that returns [] forever. Revisit only if they restore
@@ -17,9 +21,10 @@
  */
 
 import { getLeakIntel } from "@/lib/leakIntel";
+import { getPokeLeaksIntel } from "@/lib/pokeLeaksIntel";
 import { OFFICIAL_ANNOUNCEMENTS } from "@/lib/officialAnnouncements";
 
-export type IntelSource = "serebii" | "pokemon-official" | "pokebeach";
+export type IntelSource = "serebii" | "pokemon-official" | "pokebeach" | "pokeleaks";
 export type IntelConfidence = "official" | "early-intel" | "unverified";
 
 export type IntelItem = {
@@ -68,6 +73,20 @@ async function fromSerebii(force: boolean): Promise<IntelItem[]> {
   }));
 }
 
+async function fromPokeLeaks(force: boolean): Promise<IntelItem[]> {
+  const items = await getPokeLeaksIntel(force); // try/catch'd + timed out inside
+  return items.map(i => ({
+    setName: i.setName,
+    releaseDate: i.releaseDate,
+    releaseDateIso: null,
+    source: "pokeleaks" as const,
+    sourceUrl: i.sourceUrl,
+    confidence: i.confidence, // per-post: "early-intel" or "unverified"
+    foundAt: i.foundAt,
+    detail: i.detail,
+  }));
+}
+
 /**
  * Run a set of intel fetchers with full isolation and merge the results,
  * deduping by normalized set name — highest confidence wins; a duplicate
@@ -104,6 +123,7 @@ export async function getAllIntel(force = false): Promise<IntelItem[]> {
   return collectIntel([
     fromOfficialAnnouncements,
     () => fromSerebii(force),
+    () => fromPokeLeaks(force),
     // pokebeach: intentionally absent — see header comment
   ]);
 }

@@ -14,9 +14,17 @@ type LeakIntel = {
 };
 
 const SOURCE_LABEL: Record<string, string> = {
-  serebii: "Serebii",
+  serebii: "🌐 Serebii",
   pokebeach: "PokeBeach",
-  "pokemon-official": "pokemon.com",
+  "pokemon-official": "📣 pokemon.com",
+  pokeleaks: "📡 r/PokeLeaks",
+};
+
+// Friendly, correctly-labeled confidence chip per intel item.
+const CONFIDENCE_CHIP: Record<string, { label: string; cls: string }> = {
+  official: { label: "official", cls: "bg-green-950/60 border-green-700/40 text-green-400" },
+  "early-intel": { label: "corroborated leak", cls: "bg-purple-950/60 border-purple-700/40 text-purple-300" },
+  unverified: { label: "unverified", cls: "bg-amber-950/60 border-amber-700/40 text-amber-400" },
 };
 
 type ReleaseSet = {
@@ -183,7 +191,7 @@ export default function UpcomingReleases() {
               <Sparkles size={14} /> 🔮 Early Intel
             </h3>
             <span className="bg-purple-950/60 border border-purple-700/40 text-purple-400 text-[10px] font-medium px-2 py-0.5 rounded-full">
-              unofficial · sourced from Serebii
+              unofficial · Serebii + r/PokeLeaks
             </span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -194,7 +202,14 @@ export default function UpcomingReleases() {
                   <span className="text-[9px] font-medium mt-1 uppercase tracking-wide">Intel</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-white font-semibold text-sm leading-tight">{item.setName}</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-white font-semibold text-sm leading-tight">{item.setName}</span>
+                    {CONFIDENCE_CHIP[item.confidence] && (
+                      <span className={`border text-[10px] font-medium px-1.5 py-0.5 rounded-full ${CONFIDENCE_CHIP[item.confidence].cls}`}>
+                        {CONFIDENCE_CHIP[item.confidence].label}
+                      </span>
+                    )}
+                  </div>
                   <div className="text-gray-500 text-xs mt-0.5">
                     {item.releaseDate ? `releases ${item.releaseDate}` : "release date not announced yet"}
                   </div>
