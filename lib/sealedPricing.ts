@@ -97,6 +97,23 @@ async function tcgplayerFallback(productId: string, tcgProductId: number): Promi
   }
 }
 
+/**
+ * Read-only snapshot of the pricing cache for the /status health page.
+ * Deliberately does NOT trigger a fetch — reading this must never spend a
+ * refresh against the 6/day tcgapi.dev budget. dailyRemaining/checkedAt are
+ * null on a cold serverless instance that hasn't fetched yet.
+ */
+export function getSealedPricingCacheStatus() {
+  return {
+    configured: Boolean(process.env.TCGAPI_DEV_KEY),
+    cached: cache != null,
+    dailyRemaining: cache?.dailyRemaining ?? null,
+    checkedAt: cache?.checkedAt ?? null,
+    refreshesToday,
+    maxRefreshesPerDay: MAX_REFRESHES_PER_DAY,
+  };
+}
+
 export async function getSealedPrices(
   products: { id: string; name: string; tcgProductId?: number }[]
 ): Promise<SealedPricingResult> {

@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays, Archive } from "lucide-react";
+import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays, Archive, Activity } from "lucide-react";
 
 type NavItem = {
   href: string;
@@ -42,6 +42,12 @@ const sections: NavSection[] = [
     title: "Learn",
     items: [
       { href: "/guide", label: "Guide", icon: BookOpen },
+    ],
+  },
+  {
+    title: "System",
+    items: [
+      { href: "/status", label: "System Status", icon: Activity },
     ],
   },
 ];
