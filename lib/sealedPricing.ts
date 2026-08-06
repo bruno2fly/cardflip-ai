@@ -11,7 +11,15 @@
  * Defensive pattern (same as lib/stock.ts): never throws — missing key,
  * rate limit, or any error returns nulls and the UI falls back to the
  * manual price input.
+ *
+ * Side effect: every REAL fetched market price is appended to the Supabase
+ * price_history log (see supabase/price_history.sql) so lib/priceTrend.ts can
+ * compute an actual momentum trend. This piggybacks the 60-min cache — inserts
+ * only happen on a genuine refresh, never per page view — and is fully
+ * fail-soft: no Supabase, or an insert error, never blocks a price result.
  */
+
+import { supabase } from "@/lib/supabase";
 
 export type SealedPrice = {
   productId: string;
@@ -168,5 +176,27 @@ export async function getSealedPrices(
   }
 
   cache = { configured: Boolean(apiKey), checkedAt: Date.now(), dailyRemaining, prices };
+
+  // Append real fetched prices to the price_history trend log. Only rows with
+  // an actual market price AND a real source — never nulls, never MSRP. Runs
+  // on a cache miss only (this whole block is past the early cache return), so
+  // it respects the same 60-min / 6-refresh-per-day budget as the fetch above.
+  await recordPriceHistory(prices);
+
   return cache;
+}
+
+/** Fire-and-forget append of real prices to price_history. Never throws. */
+async function recordPriceHistory(prices: SealedPrice[]): Promise<void> {
+  if (!supabase) return;
+  const rows = prices
+    .filter(p => p.market != null && p.source != null)
+    .map(p => ({ product_id: p.productId, price: p.market as number, source: p.source as string }));
+  if (rows.length === 0) return;
+  try {
+    const { error } = await supabase.from("price_history").insert(rows);
+    if (error) console.warn(`[sealedPricing] price_history insert skipped: ${error.message}`);
+  } catch (err) {
+    console.warn(`[sealedPricing] price_history insert failed: ${err instanceof Error ? err.message : "unknown"}`);
+  }
 }

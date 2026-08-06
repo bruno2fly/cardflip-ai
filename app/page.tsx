@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { PRODUCTS, SealedProduct, ProductType, Hotness, tcgProductImg, tcgUrl, retailLinks } from "@/lib/products";
+import type { PriceTrend } from "@/lib/priceTrend";
 import { supabase } from "@/lib/supabase";
 import { Package2, Lightbulb, CheckCircle2, XCircle, ExternalLink, Archive, Loader2, X, Bell, HelpCircle, Clock, Tag, Zap } from "lucide-react";
 
@@ -59,6 +60,39 @@ const demandBanner: Record<Hotness, { label: string; cls: string; noteCls: strin
   "✅ Stable": { label: "✅ STABLE", cls: "bg-blue-500/10 border-blue-500/40", noteCls: "text-blue-200" },
   "❄️ Cooling": { label: "❄️ COOLING", cls: "bg-cyan-500/10 border-cyan-500/40", noteCls: "text-cyan-200" },
 };
+
+type MomentumBanner = { label: string; note: string; cls: string; noteCls: string; real: boolean };
+
+/**
+ * The momentum tag on a card. Prefers a REAL computed 14-day trend from
+ * price_history; falls back to an honest "tracking" state once history has
+ * started but isn't deep enough (1–2 points); and only for a brand-new product
+ * with zero history does it fall back to the hand-typed hotness/notes.
+ */
+function momentumBanner(trend: PriceTrend | undefined, product: SealedProduct): MomentumBanner {
+  if (trend && trend.sufficient && trend.direction && trend.percentChange != null) {
+    const pct = trend.percentChange;
+    const pctStr = `${pct > 0 ? "+" : ""}${pct.toFixed(0)}% / ${trend.windowDays}d`;
+    const note = `Real trend from ${trend.dataPoints} tracked price points over ${trend.windowDays} days`;
+    if (trend.direction === "RISING")
+      return { label: `📈 RISING (${pctStr})`, note, cls: "bg-green-500/15 border-green-500/50", noteCls: "text-green-200", real: true };
+    if (trend.direction === "FALLING")
+      return { label: `📉 FALLING (${pctStr})`, note, cls: "bg-red-500/15 border-red-500/50", noteCls: "text-red-200", real: true };
+    return { label: `➡️ STABLE (${pctStr})`, note, cls: "bg-blue-500/10 border-blue-500/40", noteCls: "text-blue-200", real: true };
+  }
+  if (trend && trend.dataPoints > 0) {
+    return {
+      label: "🆕 TRACKING",
+      note: `Not enough price history yet (${trend.dataPoints}/3 points) — a real trend appears once we've logged 3+ prices`,
+      cls: "bg-gray-700/20 border-gray-600/50",
+      noteCls: "text-gray-300",
+      real: false,
+    };
+  }
+  // brand-new product, no price history at all → hand-typed hotness fallback
+  const d = demandBanner[product.hotness];
+  return { label: d.label, note: product.notes, cls: d.cls, noteCls: d.noteCls, real: false };
+}
 
 function fmt(n: number) { return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -119,6 +153,7 @@ export default function SealedTracker() {
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [stock, setStock] = useState<StockMaps>({ bestbuy: {}, target: {} });
   const [livePrices, setLivePrices] = useState<Record<string, { market: number; source: "tcgapi" | "tcgplayer-est" }>>({});
+  const [trends, setTrends] = useState<Record<string, PriceTrend>>({});
   const [lightbox, setLightbox] = useState<{ name: string; imageUrl: string } | null>(null);
   const [addForm, setAddForm] = useState<{ productId: string; qty: string; paid: string } | null>(null);
   const [addSaving, setAddSaving] = useState(false);
@@ -287,6 +322,21 @@ export default function SealedTracker() {
     })();
   }, []);
 
+  // Real 14-day price-momentum trends (lib/priceTrend.ts). Best-effort: an
+  // empty/erroring response just leaves each card on its manual hotness tag.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/price-trend");
+        const json = await res.json();
+        if (!res.ok || !Array.isArray(json.trends)) return;
+        const map: Record<string, PriceTrend> = {};
+        for (const t of json.trends as PriceTrend[]) map[t.productId] = t;
+        setTrends(map);
+      } catch { /* cards fall back to manual hotness */ }
+    })();
+  }, []);
+
   // Log an actual purchase into sealed_inventory (the sealed flip loop starts here)
   async function saveToInventory() {
     if (!supabase || !addForm) return;
@@ -359,7 +409,7 @@ export default function SealedTracker() {
           const manualStr = raw !== "" ? raw : seed != null ? String(seed) : "";
           const manual = parseFloat(manualStr);
           const hasPrice = live != null || (!isNaN(manual) && manual > 0);
-          const demand = demandBanner[product.hotness];
+          const demand = momentumBanner(trends[product.id], product);
           const verdict = verdicts[product.id];
 
           // Real acquisition risk: the market price above is genuinely live/verified
@@ -424,7 +474,7 @@ export default function SealedTracker() {
                 )}
                 <div className="min-w-0">
                   <div className={`text-[11px] font-extrabold tracking-wide ${demand.noteCls}`}>{demand.label}</div>
-                  <div className={`text-xs font-medium leading-snug ${demand.noteCls}`}>{product.notes}</div>
+                  <div className={`text-xs font-medium leading-snug ${demand.noteCls}`}>{demand.note}</div>
                 </div>
               </div>
 

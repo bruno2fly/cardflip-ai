@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getBestBuyStock, getTargetStock } from "@/lib/stock";
 import { getSealedPrices } from "@/lib/sealedPricing";
 import { getConfirmedReleases } from "@/lib/releases";
+import { getPriceTrends, PriceTrend } from "@/lib/priceTrend";
 import { computeVerdict, VerdictInputs } from "@/lib/verdicts";
 
 export const dynamic = "force-dynamic";
@@ -105,11 +106,12 @@ export async function GET(req: Request) {
     }
 
     // --- gather real signals shared across all targets in this run ---
-    const [bestbuy, target, sealedPrices, releases] = await Promise.all([
+    const [bestbuy, target, sealedPrices, releases, trends] = await Promise.all([
       getBestBuyStock(due.map(t => ({ id: t.productId, name: t.productName }))),
       getTargetStock(due.map(t => ({ id: t.productId, name: t.productName }))),
       getSealedPrices(due.map(t => ({ id: t.productId, name: t.productName, tcgProductId: t.tcgProductId }))),
       getConfirmedReleases().catch(() => ({ upcoming: [], recent: [] })),
+      getPriceTrends(due.map(t => t.productId)).catch((): Record<string, PriceTrend> => ({})),
     ]);
     const bbById = new Map(bestbuy.statuses.map(s => [s.productId, s]));
     const tgById = new Map(target.statuses.map(s => [s.productId, s]));
@@ -126,12 +128,15 @@ export async function GET(req: Request) {
       const tg = tgById.get(t.productId);
       const price = priceById.get(t.productId);
       const release = releaseByName.get(t.productName.toLowerCase());
+      const trend = trends[t.productId];
 
       const inputs: VerdictInputs = {
         productName: t.productName,
         msrp: t.msrp,
         marketPrice: price?.market ?? null,
         marketPriceSource: price?.source ?? null,
+        priceTrendDirection: trend?.sufficient ? trend.direction : null,
+        priceTrendPercent: trend?.sufficient ? trend.percentChange : null,
         bestBuyStatus: bb?.status ?? "unknown",
         bestBuyPrice: bb?.price ?? null,
         targetStatus: tg?.status ?? "unknown",

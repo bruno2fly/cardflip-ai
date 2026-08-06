@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getBestBuyStock, getTargetStock } from "@/lib/stock";
 import { getSealedPrices } from "@/lib/sealedPricing";
 import { getConfirmedReleases } from "@/lib/releases";
+import { getPriceTrend } from "@/lib/priceTrend";
 import { computeVerdict, VerdictInputs } from "@/lib/verdicts";
 
 export const dynamic = "force-dynamic";
@@ -56,11 +57,12 @@ export async function POST(req: Request) {
   const tcgProductId = product?.tcgProductId;
 
   try {
-    const [bestbuy, target, sealedPrices, releases] = await Promise.all([
+    const [bestbuy, target, sealedPrices, releases, trend] = await Promise.all([
       getBestBuyStock([{ id: item.product_id, name: productName }]),
       getTargetStock([{ id: item.product_id, name: productName }]),
       getSealedPrices([{ id: item.product_id, name: productName, tcgProductId }]),
       getConfirmedReleases().catch(() => ({ upcoming: [], recent: [] })),
+      getPriceTrend(item.product_id).catch(() => null),
     ]);
     const bb = bestbuy.statuses[0];
     const tg = target.statuses[0];
@@ -77,6 +79,8 @@ export async function POST(req: Request) {
       msrp,
       marketPrice,
       marketPriceSource: price?.market != null ? price.source : null,
+      priceTrendDirection: trend?.sufficient ? trend.direction : null,
+      priceTrendPercent: trend?.sufficient ? trend.percentChange : null,
       bestBuyStatus: bb?.status ?? "unknown",
       bestBuyPrice: bb?.price ?? null,
       targetStatus: tg?.status ?? "unknown",

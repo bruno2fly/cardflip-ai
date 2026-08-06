@@ -25,6 +25,11 @@ export type VerdictInputs = {
   marketPrice: number | null;
   marketPriceSource: "tcgapi" | "tcgplayer-est" | "discovery-verification" | null;
 
+  // Real 14-day price momentum (lib/priceTrend.ts) from the price_history log —
+  // null when fewer than 3 real data points exist (never a fabricated trend)
+  priceTrendDirection: "RISING" | "FALLING" | "STABLE" | null;
+  priceTrendPercent: number | null; // percent change over the window, e.g. +23
+
   // Real-time retailer stock (lib/stock.ts) — "unknown" is a real, honest state
   bestBuyStatus: "in-stock" | "out-of-stock" | "unknown";
   bestBuyPrice: number | null;
@@ -69,6 +74,13 @@ function buildPrompt(inputs: VerdictInputs): string {
     `Best Buy live stock: ${inputs.bestBuyStatus}${inputs.bestBuyPrice != null ? ` at verified price $${inputs.bestBuyPrice}` : ""}`,
     `Target live stock: ${inputs.targetStatus}`,
   ];
+  if (inputs.priceTrendDirection != null) {
+    const pct = inputs.priceTrendPercent;
+    const pctStr = pct != null ? ` (${pct > 0 ? "+" : ""}${pct.toFixed(0)}% over 14 days)` : "";
+    lines.push(`Real 14-day price momentum: ${inputs.priceTrendDirection}${pctStr}.`);
+  } else {
+    lines.push(`Real 14-day price momentum: unknown (not enough price history yet).`);
+  }
   if (inputs.daysUntilRelease != null) lines.push(`Releases in ${inputs.daysUntilRelease} days.`);
   if (inputs.daysSinceRelease != null) lines.push(`Released ${inputs.daysSinceRelease} days ago.`);
   if (inputs.announcedVia) lines.push(`Announced via: ${inputs.announcedVia}.`);
