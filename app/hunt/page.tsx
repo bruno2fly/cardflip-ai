@@ -62,8 +62,12 @@ function mercariUrl(name: string) {
 function ebayUrl(name: string) {
   return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(`${name} pokemon`)}&LH_BIN=1&_sop=15`;
 }
+// Deep-link pre-filtered to Near Mint so the listing matches the "NM avg"
+// price shown on the card (verified: Condition=Near+Mint is retained by
+// tcgplayer.com search URLs). Without it, the page lists every condition
+// (NM/LP/MP/HP) at very different prices.
 function tcgplayerUrl(name: string) {
-  return `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(name)}&view=grid&sortMode=2`;
+  return `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(name)}&view=grid&sortMode=2&Condition=Near+Mint`;
 }
 
 export default function HuntList() {
@@ -349,7 +353,7 @@ export default function HuntList() {
               {/* Numbers */}
               <div className="space-y-1.5 mb-3">
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Average Sell Price</span>
+                  <span className="text-gray-500">Average Sell Price <span className="text-gray-600">(NM avg)</span></span>
                   <span className="text-white tabular font-medium">${fmt(market)}</span>
                 </div>
 
@@ -411,7 +415,7 @@ export default function HuntList() {
                         <div className="text-white text-xs tabular font-bold">{live.low != null ? `$${fmt(live.low)}` : "—"}</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-yellow-400 text-[10px] font-medium mb-1">Average Sell</div>
+                        <div className="text-yellow-400 text-[10px] font-medium mb-1">Average Sell (NM)</div>
                         <div className="text-white text-xs tabular font-bold">${fmt(live.market)}</div>
                       </div>
                       <div className="text-center">
@@ -444,9 +448,15 @@ export default function HuntList() {
                   target="_blank" rel="noopener noreferrer"
                   className="col-span-2 flex items-center justify-center gap-1.5 bg-yellow-500 hover:bg-yellow-400 text-gray-900 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
                 >
-                  Find on TCGPlayer
+                  Find on TCGPlayer (Near Mint)
                 </a>
               </div>
+
+              {/* Why the price might differ on TCGPlayer */}
+              <p className="text-gray-600 text-[10px] leading-snug mt-2 flex items-start gap-1">
+                <Info size={10} className="flex-shrink-0 mt-0.5" />
+                Price shown is the Near Mint average. This link pre-filters TCGPlayer to Near Mint — it otherwise lists every condition (LP/MP/HP/Damaged) at different prices.
+              </p>
 
               {/* Sell velocity */}
               <div className="mt-3 flex justify-center">

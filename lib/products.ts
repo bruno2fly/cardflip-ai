@@ -34,6 +34,27 @@ export function tcgUrl(name: string) {
   return `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(name)}&view=grid`;
 }
 
+/**
+ * TCGPlayer deep-link for a SINGLE CARD, pre-filtered to Near Mint condition.
+ *
+ * The market/"NM avg" price we show per card is TCGPlayer's Near Mint average,
+ * but a bare product/search link lands on the full mixed-condition listing
+ * (NM, LP, MP, HP, Damaged) at wildly different prices — the source of the
+ * "why doesn't the price match?" confusion. `Condition=Near+Mint` is a real,
+ * verified TCGPlayer facet param: tested live on tcgplayer.com, it is retained
+ * by both product and search URLs (a bare load strips extra params, but this
+ * one persists and the search page even echoes it back with its own facets).
+ *
+ * NOTE: the Pokemon TCG API's card link is an affiliate REDIRECT
+ * (prices.pokemontcg.io/tcgplayer/<id>) that drops any query param we append,
+ * so we deep-link a direct tcgplayer.com search URL by card name instead —
+ * that reliably carries the Near Mint filter. Sealed boxes have no condition,
+ * so this is for single cards only; sealed products keep plain tcgUrl().
+ */
+export function tcgNearMintUrl(name: string) {
+  return `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(name)}&view=grid&sortMode=2&Condition=Near+Mint`;
+}
+
 /** Public retailer search URLs — where Jason actually BUYS, at MSRP. */
 export function retailLinks(name: string): Pick<SealedProduct, "walmartUrl" | "targetUrl" | "bestbuyUrl" | "pokemonCenterUrl"> {
   const q = encodeURIComponent(name);

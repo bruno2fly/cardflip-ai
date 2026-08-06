@@ -4,7 +4,8 @@ import Image from "next/image";
 import { inventory as mockInventory } from "@/lib/data";
 import { supabase, DbCard } from "@/lib/supabase";
 import { velocityFor, dealScore } from "@/lib/hunt";
-import { Search, Zap, RefreshCw, ExternalLink, AlertTriangle, Eye, Radar } from "lucide-react";
+import { tcgNearMintUrl } from "@/lib/products";
+import { Search, Zap, RefreshCw, ExternalLink, AlertTriangle, Eye, Radar, Info } from "lucide-react";
 
 const FEE_RATE = 0.13;        // 13% marketplace fees
 const SHIPPING_COST = 5;      // shipping to buyer
@@ -240,7 +241,7 @@ export default function Scanner() {
 
           const priceCols: { label: string; value: number | null | undefined; cls: string }[] = [
             { label: "Cheapest Listed", value: p.low, cls: "text-blue-400" },
-            { label: "Average Sell Price", value: p.market, cls: "text-yellow-400" },
+            { label: "Average Sell (NM avg)", value: p.market, cls: "text-yellow-400" },
             { label: "Top Listing", value: p.high, cls: "text-pink-400" },
           ];
 
@@ -287,13 +288,21 @@ export default function Scanner() {
                       </span>
                     )}
 
-                    {p.status === "ok" && p.url && (
-                      <a href={p.url} target="_blank" rel="noreferrer"
+                    {p.status === "ok" && (
+                      <a href={tcgNearMintUrl(card.name)} target="_blank" rel="noreferrer"
+                        title="Opens TCGPlayer pre-filtered to Near Mint, matching the average sell price shown"
                         className="flex items-center gap-1 text-gray-500 hover:text-yellow-400 text-xs transition-colors">
-                        <ExternalLink size={10} /> TCGPlayer
+                        <ExternalLink size={10} /> TCGPlayer (NM)
                       </a>
                     )}
                   </div>
+
+                  {p.status === "ok" && p.market != null && (
+                    <p className="text-gray-600 text-[10px] leading-snug mt-1.5 flex items-start gap-1">
+                      <Info size={10} className="flex-shrink-0 mt-0.5" />
+                      Prices are Near Mint averages. The TCGPlayer (NM) link is pre-filtered to Near Mint — it otherwise lists every condition (LP/MP/HP/Damaged) at different prices.
+                    </p>
+                  )}
 
                   {/* Signal + plain-English explanation */}
                   {p.status === "loading" && (

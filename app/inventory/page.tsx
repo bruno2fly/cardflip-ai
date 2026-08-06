@@ -318,7 +318,7 @@ export default function Inventory() {
                   <input type="number" className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500"
                     placeholder="Current ($) *" value={form.current} onChange={e => setForm({ ...form, current: e.target.value })} />
                 </div>
-                <p className="text-gray-600 text-[11px] mt-2">Current value is pre-filled with the live TCGPlayer market price when available.</p>
+                <p className="text-gray-600 text-[11px] mt-2">Current value is pre-filled with the live TCGPlayer <strong>Near Mint (raw)</strong> average when available — adjust it for graded copies (PSA/BGS) or lower-condition cards, which price very differently.</p>
               </div>
             </div>
           )}

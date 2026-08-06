@@ -251,7 +251,7 @@ export default function LotAnalyzer() {
                   {item.status === "ok" ? (
                     <div className="flex gap-6 text-right">
                       <div>
-                        <div className="text-gray-500 text-[11px]">Market</div>
+                        <div className="text-gray-500 text-[11px]">Market <span className="text-gray-600">(NM avg)</span></div>
                         <div className="text-white text-sm tabular font-medium">${fmt(item.market)}</div>
                       </div>
                       <div>
@@ -271,7 +271,7 @@ export default function LotAnalyzer() {
 
           <div className="flex items-center gap-2 text-gray-600 text-xs">
             <Info size={12} className="flex-shrink-0" />
-            <span>Market prices are live TCGPlayer values via the Pokemon TCG API. Cards that can&apos;t be matched are left out of the totals — price those by hand before bidding.</span>
+            <span>Market prices are live TCGPlayer <strong>Near Mint</strong> averages via the Pokemon TCG API — copies in lower conditions (LP/MP/HP) sell for less, so discount accordingly. Cards that can&apos;t be matched are left out of the totals — price those by hand before bidding.</span>
           </div>
         </>
       )}
