@@ -168,12 +168,12 @@ export default function Scanner() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Market Scanner</h1>
           <p className="text-gray-500 text-sm mt-0.5">Tracking {cards.length} cards · live TCGPlayer prices</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {buyOpps.length > 0 && (
             <div className="flex items-center gap-2 bg-green-950/60 border border-green-700/40 rounded-full px-3 py-1.5">
               <Zap size={13} className="text-green-400" />
@@ -183,7 +183,7 @@ export default function Scanner() {
           <button
             onClick={runScanNow}
             disabled={scan.running}
-            className="flex items-center gap-2 bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/30 text-yellow-400 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 whitespace-nowrap bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/30 text-yellow-400 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors disabled:opacity-50"
             title="Runs the hourly email-alert scan right now"
           >
             <Radar size={13} className={scan.running ? "animate-spin" : ""} /> Run Alert Scan
@@ -191,7 +191,7 @@ export default function Scanner() {
           <button
             onClick={() => fetchPrices(cards)}
             disabled={refreshing}
-            className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 text-xs font-medium px-3 py-1.5 rounded-full transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 whitespace-nowrap bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 text-xs font-medium px-3 py-1.5 rounded-full transition-colors disabled:opacity-50"
           >
             <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} /> Refresh Live Prices
           </button>

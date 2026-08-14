@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays, Archive, Activity } from "lucide-react";
+import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays, Archive, Activity, Menu, X } from "lucide-react";
 
 type NavItem = {
   href: string;
@@ -55,6 +55,9 @@ const sections: NavSection[] = [
 export default function Sidebar() {
   const path = usePathname();
   const [starterMode, setStarterMode] = useState(false);
+  // Mobile drawer open/closed. Closes automatically whenever the route changes.
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setOpen(false); }, [path]);
 
   // Track Starter Mode (set on the Hunt List page) without a reload
   useEffect(() => {
@@ -69,19 +72,55 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-50">
-      {/* Logo */}
-      <div className="p-6 border-b border-gray-800">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-lg font-bold text-gray-900">
-            🃏
-          </div>
-          <div>
-            <div className="font-bold text-white text-sm leading-tight">CardFlip AI</div>
-            <div className="text-xs text-gray-500">Trading Intelligence</div>
-          </div>
+    <>
+      {/* Mobile top bar — hidden on desktop. Holds the hamburger + logo. */}
+      <header className="md:hidden fixed top-0 inset-x-0 h-14 z-40 bg-gray-900 border-b border-gray-800 flex items-center gap-3 px-4">
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="Open navigation menu"
+          className="text-gray-300 hover:text-white p-1 -ml-1"
+        >
+          <Menu size={22} />
+        </button>
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-sm font-bold text-gray-900">🃏</div>
+          <span className="font-bold text-white text-sm">CardFlip AI</span>
         </div>
-      </div>
+      </header>
+
+      {/* Backdrop behind the open drawer (mobile only) */}
+      {open && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/60 z-40"
+          onClick={() => setOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`fixed left-0 top-0 h-full w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-50 transform transition-transform duration-200 ease-out ${
+          open ? "translate-x-0" : "-translate-x-full"
+        } md:translate-x-0`}
+      >
+        {/* Logo (+ close button on mobile) */}
+        <div className="p-6 border-b border-gray-800 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-lg font-bold text-gray-900">
+              🃏
+            </div>
+            <div>
+              <div className="font-bold text-white text-sm leading-tight">CardFlip AI</div>
+              <div className="text-xs text-gray-500">Trading Intelligence</div>
+            </div>
+          </div>
+          <button
+            onClick={() => setOpen(false)}
+            aria-label="Close navigation menu"
+            className="md:hidden text-gray-400 hover:text-white p-1"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto p-4 space-y-5">
@@ -143,6 +182,7 @@ export default function Sidebar() {
           </div>
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
