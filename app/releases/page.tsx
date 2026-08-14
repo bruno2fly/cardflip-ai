@@ -18,6 +18,7 @@ const SOURCE_LABEL: Record<string, string> = {
   pokebeach: "PokeBeach",
   "pokemon-official": "📣 pokemon.com",
   pokeleaks: "📡 r/PokeLeaks",
+  "manual-find": "👀 Manual Find",
 };
 
 // Friendly, correctly-labeled confidence chip per intel item.
@@ -191,7 +192,7 @@ export default function UpcomingReleases() {
               <Sparkles size={14} /> 🔮 Early Intel
             </h3>
             <span className="bg-purple-950/60 border border-purple-700/40 text-purple-400 text-[10px] font-medium px-2 py-0.5 rounded-full">
-              unofficial · Serebii + r/PokeLeaks
+              unofficial · Serebii + r/PokeLeaks + manual finds
             </span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

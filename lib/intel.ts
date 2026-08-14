@@ -23,8 +23,9 @@
 import { getLeakIntel } from "@/lib/leakIntel";
 import { getPokeLeaksIntel } from "@/lib/pokeLeaksIntel";
 import { OFFICIAL_ANNOUNCEMENTS } from "@/lib/officialAnnouncements";
+import { MANUAL_FINDS } from "@/lib/manualFinds";
 
-export type IntelSource = "serebii" | "pokemon-official" | "pokebeach" | "pokeleaks";
+export type IntelSource = "serebii" | "pokemon-official" | "pokebeach" | "pokeleaks" | "manual-find";
 export type IntelConfidence = "official" | "early-intel" | "unverified";
 
 export type IntelItem = {
@@ -70,6 +71,19 @@ async function fromSerebii(force: boolean): Promise<IntelItem[]> {
     confidence: "early-intel" as const,
     foundAt: i.foundAt,
     detail: i.detail,
+  }));
+}
+
+async function fromManualFinds(): Promise<IntelItem[]> {
+  return MANUAL_FINDS.map(f => ({
+    setName: f.setName,
+    releaseDate: f.releaseDate,
+    releaseDateIso: null,
+    source: "manual-find" as const,
+    sourceUrl: f.sourceUrl,
+    confidence: "unverified" as const,
+    foundAt: Date.now(),
+    detail: f.detail,
   }));
 }
 
@@ -124,6 +138,7 @@ export async function getAllIntel(force = false): Promise<IntelItem[]> {
     fromOfficialAnnouncements,
     () => fromSerebii(force),
     () => fromPokeLeaks(force),
+    fromManualFinds,
     // pokebeach: intentionally absent — see header comment
   ]);
 }
