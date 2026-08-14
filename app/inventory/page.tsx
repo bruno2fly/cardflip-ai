@@ -308,7 +308,7 @@ export default function Inventory() {
                     <X size={14} />
                   </button>
                 </div>
-                <div className="grid grid-cols-3 gap-3 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                   <select className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
                     value={form.condition} onChange={e => setForm({ ...form, condition: e.target.value })}>
                     {["PSA 10", "PSA 9", "PSA 8", "PSA 7", "PSA 6", "Raw NM", "Raw LP"].map(c => <option key={c}>{c}</option>)}
@@ -340,7 +340,7 @@ export default function Inventory() {
 
       {/* Card Grid */}
       {loading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4 animate-pulse">
               <div className="w-full aspect-[2.5/3.5] mb-3 rounded-lg bg-gray-800" />

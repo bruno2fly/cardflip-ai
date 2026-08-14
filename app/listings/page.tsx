@@ -146,7 +146,7 @@ export default function Listings() {
       )}
 
       {/* Summary row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <div className="text-gray-400 text-xs mb-1">Active Listings</div>
           <div className="text-2xl font-bold text-white tabular">{active.length}</div>
@@ -167,9 +167,9 @@ export default function Listings() {
         </div>
       </div>
 
-      {/* Listings table */}
+      {/* Listings table — grid on desktop, stacked cards on mobile */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <div className="grid grid-cols-12 gap-4 px-5 py-3 text-xs text-gray-500 border-b border-gray-800 font-medium uppercase tracking-wide">
+        <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3 text-xs text-gray-500 border-b border-gray-800 font-medium uppercase tracking-wide">
           <div className="col-span-3">Item</div>
           <div className="col-span-2">Platform</div>
           <div className="col-span-1 text-right">Asking</div>
@@ -185,81 +185,77 @@ export default function Listings() {
             const profit = estProfit(listing.cost, listing.asking, listing.kind);
             const marginPct = pct(listing.cost, listing.asking, listing.kind);
             const stale = listing.daysListed >= 14 && listing.status === "active";
+            const marginCls = parseFloat(marginPct) > 15 ? "text-green-400" : parseFloat(marginPct) > 0 ? "text-yellow-400" : "text-red-400";
+            const sealedBadge = listing.kind === "sealed" && (
+              <span className="inline-flex items-center gap-1 bg-purple-950/60 border border-purple-700/40 text-purple-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                <Package2 size={9} /> SEALED{listing.qty && listing.qty > 1 ? ` ×${listing.qty}` : ""}
+              </span>
+            );
+            const statusChip = listing.status === "active" ? (
+              <span className="flex items-center gap-1 text-green-400 text-xs"><Clock size={11} /> Active</span>
+            ) : (
+              <span className="flex items-center gap-1 text-gray-500 text-xs"><CheckCircle2 size={11} /> Sold</span>
+            );
+            const actionBtn = usingSupabase && (listing.status === "active" ? (
+              <button onClick={() => markSold(listing)} disabled={busyId === listing.id} className="text-xs font-medium text-gray-400 hover:text-green-400 border border-gray-700 hover:border-green-700/50 rounded-md px-2 py-1 transition-colors disabled:opacity-50">Mark Sold</button>
+            ) : (
+              <button onClick={() => relist(listing)} disabled={busyId === listing.id} className="text-xs font-medium text-gray-400 hover:text-yellow-400 border border-gray-700 hover:border-yellow-700/50 rounded-md px-2 py-1 transition-colors disabled:opacity-50 inline-flex items-center gap-1"><Undo2 size={10} /> Relist</button>
+            ));
 
             return (
-              <div key={listing.id} className={`grid grid-cols-12 gap-4 px-5 py-4 text-sm items-center hover:bg-gray-800/40 transition-colors ${stale ? "bg-orange-950/10" : ""}`}>
-                <div className="col-span-3">
-                  <div className="font-medium text-white flex items-center gap-2 flex-wrap">
-                    {listing.name}
-                    {listing.kind === "sealed" && (
-                      <span className="inline-flex items-center gap-1 bg-purple-950/60 border border-purple-700/40 text-purple-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                        <Package2 size={9} /> SEALED{listing.qty && listing.qty > 1 ? ` ×${listing.qty}` : ""}
-                      </span>
+              <div key={listing.id} className={stale ? "bg-orange-950/10" : ""}>
+                {/* Desktop grid row */}
+                <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-4 text-sm items-center hover:bg-gray-800/40 transition-colors">
+                  <div className="col-span-3">
+                    <div className="font-medium text-white flex items-center gap-2 flex-wrap">{listing.name}{sealedBadge}</div>
+                    {stale && (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <AlertTriangle size={11} className="text-orange-400" />
+                        <span className="text-orange-400 text-xs">Reprice suggested</span>
+                      </div>
                     )}
                   </div>
-                  {stale && (
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <AlertTriangle size={11} className="text-orange-400" />
-                      <span className="text-orange-400 text-xs">Reprice suggested</span>
-                    </div>
-                  )}
-                </div>
-                <div className="col-span-2">
-                  <span className={`text-xs font-medium border rounded-md px-2 py-1 ${platformColors[listing.platform] || "bg-gray-800 text-gray-400 border-gray-700"}`}>
-                    {listing.platform}
-                  </span>
-                </div>
-                <div className="col-span-1 text-right font-semibold text-white tabular">${fmt(listing.asking)}</div>
-                <div className={`col-span-1 text-right font-semibold tabular ${profit > 0 ? "text-green-400" : "text-red-400"}`}>
-                  {profit > 0 ? "+" : ""}${fmt(profit)}
-                </div>
-                <div className={`col-span-1 text-right tabular text-xs font-medium ${parseFloat(marginPct) > 15 ? "text-green-400" : parseFloat(marginPct) > 0 ? "text-yellow-400" : "text-red-400"}`}>
-                  {marginPct}%
-                </div>
-                <div className="col-span-1 text-center">
-                  <span className={`text-xs tabular ${stale ? "text-orange-400 font-semibold" : "text-gray-400"}`}>
-                    {listing.status === "sold" ? "—" : `${listing.daysListed}d`}
-                  </span>
-                </div>
-                <div className="col-span-1 text-center">
-                  <div className="flex items-center justify-center gap-1 text-xs text-gray-400">
-                    {listing.watchers > 0 ? (
-                      <>
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
-                        <span className="tabular">{listing.watchers}</span>
-                      </>
-                    ) : "—"}
+                  <div className="col-span-2">
+                    <span className={`text-xs font-medium border rounded-md px-2 py-1 ${platformColors[listing.platform] || "bg-gray-800 text-gray-400 border-gray-700"}`}>{listing.platform}</span>
                   </div>
+                  <div className="col-span-1 text-right font-semibold text-white tabular">${fmt(listing.asking)}</div>
+                  <div className={`col-span-1 text-right font-semibold tabular ${profit > 0 ? "text-green-400" : "text-red-400"}`}>{profit > 0 ? "+" : ""}${fmt(profit)}</div>
+                  <div className={`col-span-1 text-right tabular text-xs font-medium ${marginCls}`}>{marginPct}%</div>
+                  <div className="col-span-1 text-center">
+                    <span className={`text-xs tabular ${stale ? "text-orange-400 font-semibold" : "text-gray-400"}`}>{listing.status === "sold" ? "—" : `${listing.daysListed}d`}</span>
+                  </div>
+                  <div className="col-span-1 text-center">
+                    <div className="flex items-center justify-center gap-1 text-xs text-gray-400">
+                      {listing.watchers > 0 ? (<><span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /><span className="tabular">{listing.watchers}</span></>) : "—"}
+                    </div>
+                  </div>
+                  <div className="col-span-1 text-center">{statusChip}</div>
+                  <div className="col-span-1 text-center">{actionBtn}</div>
                 </div>
-                <div className="col-span-1 text-center">
-                  {listing.status === "active" ? (
-                    <span className="flex items-center justify-center gap-1 text-green-400 text-xs">
-                      <Clock size={11} /> Active
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-1 text-gray-500 text-xs">
-                      <CheckCircle2 size={11} /> Sold
-                    </span>
-                  )}
-                </div>
-                <div className="col-span-1 text-center">
-                  {usingSupabase && (listing.status === "active" ? (
-                    <button
-                      onClick={() => markSold(listing)}
-                      disabled={busyId === listing.id}
-                      className="text-xs font-medium text-gray-400 hover:text-green-400 border border-gray-700 hover:border-green-700/50 rounded-md px-2 py-1 transition-colors disabled:opacity-50"
-                    >
-                      Mark Sold
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => relist(listing)}
-                      disabled={busyId === listing.id}
-                      className="text-xs font-medium text-gray-400 hover:text-yellow-400 border border-gray-700 hover:border-yellow-700/50 rounded-md px-2 py-1 transition-colors disabled:opacity-50 inline-flex items-center gap-1"
-                    >
-                      <Undo2 size={10} /> Relist
-                    </button>
-                  ))}
+
+                {/* Mobile card */}
+                <div className="md:hidden px-4 py-3.5 hover:bg-gray-800/40 transition-colors">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="min-w-0">
+                      <div className="font-medium text-white text-sm flex items-center gap-2 flex-wrap">{listing.name}{sealedBadge}</div>
+                      {stale && (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <AlertTriangle size={11} className="text-orange-400 flex-shrink-0" />
+                          <span className="text-orange-400 text-xs">Reprice suggested</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-shrink-0">{statusChip}</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                    <div className="flex justify-between gap-2"><span className="text-gray-500">Platform</span><span className="text-gray-300 truncate">{listing.platform}</span></div>
+                    <div className="flex justify-between gap-2"><span className="text-gray-500">Asking</span><span className="text-white font-semibold tabular">${fmt(listing.asking)}</span></div>
+                    <div className="flex justify-between gap-2"><span className="text-gray-500">Est. Profit</span><span className={`font-semibold tabular ${profit > 0 ? "text-green-400" : "text-red-400"}`}>{profit > 0 ? "+" : ""}${fmt(profit)}</span></div>
+                    <div className="flex justify-between gap-2"><span className="text-gray-500">Margin</span><span className={`tabular font-medium ${marginCls}`}>{marginPct}%</span></div>
+                    <div className="flex justify-between gap-2"><span className="text-gray-500">Days</span><span className={`tabular ${stale ? "text-orange-400 font-semibold" : "text-gray-300"}`}>{listing.status === "sold" ? "—" : `${listing.daysListed}d`}</span></div>
+                    <div className="flex justify-between gap-2"><span className="text-gray-500">Watchers</span><span className="tabular text-gray-300">{listing.watchers > 0 ? listing.watchers : "—"}</span></div>
+                  </div>
+                  {actionBtn && <div className="mt-3">{actionBtn}</div>}
                 </div>
               </div>
             );

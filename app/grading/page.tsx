@@ -281,7 +281,7 @@ export default function Grading() {
           <div className="px-5 py-3 border-b border-gray-800">
             <h3 className="text-sm font-semibold text-white">2. Grading outcomes</h3>
           </div>
-          <div className="grid grid-cols-12 gap-4 px-5 py-3 text-xs text-gray-500 border-b border-gray-800 font-medium uppercase tracking-wide">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3 text-xs text-gray-500 border-b border-gray-800 font-medium uppercase tracking-wide">
             <div className="col-span-2">Grade</div>
             <div className="col-span-2 text-right">Est. Market Value</div>
             <div className="col-span-2 text-right">Total Cost</div>
@@ -298,20 +298,38 @@ export default function Grading() {
               const roi = totalCost > 0 ? (profit / totalCost) * 100 : 0;
               const v = verdictStyles[verdictFor(roi)];
               return (
-                <div key={grade} className="grid grid-cols-12 gap-4 px-5 py-4 text-sm items-center hover:bg-gray-800/40 transition-colors">
-                  <div className="col-span-2 font-semibold text-white">{grade}</div>
-                  <div className="col-span-2 text-right text-white tabular">${fmt(value)}</div>
-                  <div className="col-span-2 text-right text-gray-400 tabular">${fmt(totalCost)}</div>
-                  <div className={`col-span-2 text-right font-semibold tabular ${profit >= 0 ? "text-green-400" : "text-red-400"}`}>
-                    {profit >= 0 ? "+" : ""}${fmt(profit)}
+                <div key={grade}>
+                  {/* Desktop grid row */}
+                  <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-4 text-sm items-center hover:bg-gray-800/40 transition-colors">
+                    <div className="col-span-2 font-semibold text-white">{grade}</div>
+                    <div className="col-span-2 text-right text-white tabular">${fmt(value)}</div>
+                    <div className="col-span-2 text-right text-gray-400 tabular">${fmt(totalCost)}</div>
+                    <div className={`col-span-2 text-right font-semibold tabular ${profit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      {profit >= 0 ? "+" : ""}${fmt(profit)}
+                    </div>
+                    <div className={`col-span-1 text-right tabular text-xs font-medium ${roi > 40 ? "text-green-400" : roi >= 20 ? "text-yellow-400" : "text-red-400"}`}>
+                      {roi.toFixed(0)}%
+                    </div>
+                    <div className="col-span-3 flex justify-center">
+                      <span className={`flex items-center gap-1 border text-xs font-bold px-2.5 py-1 rounded-full ${v.cls}`}>
+                        <v.Icon size={11} /> {v.label}
+                      </span>
+                    </div>
                   </div>
-                  <div className={`col-span-1 text-right tabular text-xs font-medium ${roi > 40 ? "text-green-400" : roi >= 20 ? "text-yellow-400" : "text-red-400"}`}>
-                    {roi.toFixed(0)}%
-                  </div>
-                  <div className="col-span-3 flex justify-center">
-                    <span className={`flex items-center gap-1 border text-xs font-bold px-2.5 py-1 rounded-full ${v.cls}`}>
-                      <v.Icon size={11} /> {v.label}
-                    </span>
+
+                  {/* Mobile card */}
+                  <div className="md:hidden px-4 py-3 hover:bg-gray-800/40 transition-colors">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span className="font-semibold text-white text-sm">{grade}</span>
+                      <span className={`flex items-center gap-1 border text-[11px] font-bold px-2 py-0.5 rounded-full ${v.cls}`}>
+                        <v.Icon size={10} /> {v.label}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div><div className="text-gray-500 text-[10px]">Value</div><div className="text-white text-xs tabular">${fmt(value)}</div></div>
+                      <div><div className="text-gray-500 text-[10px]">Net Profit</div><div className={`text-xs tabular font-semibold ${profit >= 0 ? "text-green-400" : "text-red-400"}`}>{profit >= 0 ? "+" : ""}${fmt(profit)}</div></div>
+                      <div><div className="text-gray-500 text-[10px]">ROI</div><div className={`text-xs tabular ${roi > 40 ? "text-green-400" : roi >= 20 ? "text-yellow-400" : "text-red-400"}`}>{roi.toFixed(0)}%</div></div>
+                    </div>
                   </div>
                 </div>
               );

@@ -249,7 +249,7 @@ export default function LotAnalyzer() {
                     {item.set && <div className="text-gray-500 text-xs truncate">{item.set}</div>}
                   </div>
                   {item.status === "ok" ? (
-                    <div className="flex gap-6 text-right">
+                    <div className="flex gap-4 sm:gap-6 text-right flex-shrink-0">
                       <div>
                         <div className="text-gray-500 text-[11px]">Market <span className="text-gray-600">(NM avg)</span></div>
                         <div className="text-white text-sm tabular font-medium">${fmt(item.market)}</div>
