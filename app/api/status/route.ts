@@ -5,6 +5,7 @@ import { productUrl, parseTargetHtml } from "@/lib/targetStock";
 import { getSealedPricingCacheStatus } from "@/lib/sealedPricing";
 import { supabase } from "@/lib/supabase";
 import { fetchNowInStockListings, getNowInStockCacheInfo } from "@/lib/nowInStock";
+import { fetchTypaCommunityUpdates, getTypaCacheInfo } from "@/lib/dropIntel";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -160,6 +161,14 @@ async function checkIntelSource(name: string, url: string, opts: { curated?: boo
   return { name, status: "green", detail: `Reachable — HTTP ${r.status}, ${r.bytes.toLocaleString()} bytes` };
 }
 
+async function checkTypa(): Promise<Row> {
+  const posts = await fetchTypaCommunityUpdates(true);
+  const info = getTypaCacheInfo();
+  if (!info) return { name: "TYPA community feed", status: "red", detail: "Live fetch failed before the page could be parsed" };
+  if (posts.length === 0) return { name: "TYPA community feed", status: "red", detail: `Live page fetched (${info.bytes.toLocaleString()} bytes) but no forward-looking posts parsed` };
+  return { name: "TYPA community feed", status: "green", detail: `Live page parsed — ${info.bytes.toLocaleString()} bytes · ${posts.length} predictive community posts` };
+}
+
 // ---- Cron Jobs --------------------------------------------------------------
 
 // Mirror of vercel.json, plus the Supabase table whose newest timestamp is the
@@ -225,10 +234,11 @@ export async function GET() {
     checkCrons().catch((): Row[] => []),
   ]);
 
-  const [serebii, pokemonCom, pokeleaks] = await Promise.all([
+  const [serebii, pokemonCom, pokeleaks, typa] = await Promise.all([
     checkIntelSource("Serebii", "https://www.serebii.net/index2.shtml").catch((): Row => ({ name: "Serebii", status: "red", detail: "check crashed" })),
     checkIntelSource("pokemon.com (curated)", "https://tcg.pokemon.com/en-us/expansions/", { curated: true }).catch((): Row => ({ name: "pokemon.com (curated)", status: "yellow", detail: "check crashed" })),
     checkIntelSource("r/PokeLeaks", "https://www.reddit.com/r/PokeLeaks/.rss").catch((): Row => ({ name: "r/PokeLeaks", status: "red", detail: "check crashed" })),
+    checkTypa().catch((): Row => ({ name: "TYPA community feed", status: "red", detail: "check crashed" })),
   ]);
 
   const sections: Section[] = [
@@ -240,7 +250,7 @@ export async function GET() {
       { name: "Pokémon Center", status: "gray", detail: "Not implemented — no Pokémon Center stock integration exists yet" },
     ] },
     { title: "Alerts", rows: [checkEmail(), checkDiscord(), checkSms()] },
-    { title: "Pricing & Intel", rows: [priceSource, priceTrend, checkPerplexity(), serebii, pokemonCom, pokeleaks] },
+    { title: "Pricing & Intel", rows: [priceSource, priceTrend, checkPerplexity(), serebii, pokemonCom, pokeleaks, typa] },
     { title: "Cron Jobs", rows: crons },
     { title: "Database", rows: [sup] },
   ];
