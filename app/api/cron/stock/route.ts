@@ -3,6 +3,7 @@ import { PRODUCTS } from "@/lib/products";
 import { getBestBuyStock, getTargetStock, ProductStock } from "@/lib/stock";
 import { sendStockAlerts, StockFlip, Retailer } from "@/lib/alerts";
 import { supabase } from "@/lib/supabase";
+import { fetchNowInStockListings, matchToProduct } from "@/lib/nowInStock";
 
 export const dynamic = "force-dynamic";
 
@@ -18,15 +19,39 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const list = PRODUCTS.map(p => ({ id: p.id, name: p.name, tcin: p.targetTcin }));
-    const [bestbuy, target] = await Promise.all([
+    const [bestbuy, target, nowInStock] = await Promise.all([
       getBestBuyStock(list, true),
       getTargetStock(list, true),
+      fetchNowInStockListings(true),
     ]);
 
-    const checks: (ProductStock & { retailer: Retailer })[] = [
-      ...(bestbuy.configured ? bestbuy.statuses.map(s => ({ ...s, retailer: "bestbuy" as const })) : []),
-      ...target.statuses.map(s => ({ ...s, retailer: "target" as const })),
+    const rawChecks: (ProductStock & { retailer: Retailer; source: "direct" | "nowinstock" })[] = [
+      ...(bestbuy.configured ? bestbuy.statuses.map(s => ({ ...s, retailer: "bestbuy", source: "direct" as const })) : []),
+      ...target.statuses.map(s => ({ ...s, retailer: "target", source: "direct" as const })),
+      ...nowInStock.flatMap(listing => {
+        const productId = matchToProduct(listing.rawName, PRODUCTS);
+        if (!productId) return [];
+        return [{
+          productId,
+          status: listing.status === "preorder" ? "in-stock" as const : listing.status,
+          sku: null,
+          url: listing.buyUrl,
+          price: listing.price,
+          retailer: listing.retailer,
+          source: "nowinstock" as const,
+        }];
+      }),
     ];
+    // A feed can contain more than one URL for the same product/retailer.
+    // Collapse those to one state, with a buyable listing taking precedence.
+    const checksByKey = new Map<string, typeof rawChecks[number]>();
+    const rank: Record<ProductStock["status"], number> = { unknown: 0, "out-of-stock": 1, "in-stock": 2 };
+    for (const check of rawChecks) {
+      const key = `${check.source}:${check.retailer}:${check.productId}`;
+      const current = checksByKey.get(key);
+      if (!current || rank[check.status] > rank[current.status]) checksByKey.set(key, check);
+    }
+    const checks = Array.from(checksByKey.values());
 
     if (checks.length === 0) {
       return NextResponse.json({ skipped: "No retailer checks ran (BESTBUY_API_KEY not set, Target returned nothing)" });
@@ -42,7 +67,7 @@ export async function GET() {
     // re-alert every product on every run.
     const { data: logRows, error: logError } = await supabase
       .from("stock_alerts_log")
-      .select("product_id, retailer, status, created_at")
+      .select("product_id, retailer, source, status, created_at")
       .order("created_at", { ascending: false });
     if (logError) {
       return NextResponse.json(
@@ -52,20 +77,20 @@ export async function GET() {
     }
     const lastStatus = new Map<string, string>();
     for (const row of logRows ?? []) {
-      const key = `${row.retailer ?? "bestbuy"}:${row.product_id}`;
+      const key = `${row.source ?? "direct"}:${row.retailer ?? "bestbuy"}:${row.product_id}`;
       if (!lastStatus.has(key)) lastStatus.set(key, row.status);
     }
 
     const byId = new Map(PRODUCTS.map(p => [p.id, p]));
     const flips: StockFlip[] = [];
-    const changes: { product_id: string; product_name: string; status: string; sku: string | null; retailer: Retailer }[] = [];
+    const changes: { product_id: string; product_name: string; status: string; sku: string | null; retailer: Retailer; source: "direct" | "nowinstock" }[] = [];
 
     for (const s of checks) {
-      const prev = lastStatus.get(`${s.retailer}:${s.productId}`);
+      const prev = lastStatus.get(`${s.source}:${s.retailer}:${s.productId}`);
       if (prev === s.status) continue; // no change, nothing to log or alert
 
       const product = byId.get(s.productId)!;
-      changes.push({ product_id: s.productId, product_name: product.name, status: s.status, sku: s.sku, retailer: s.retailer });
+      changes.push({ product_id: s.productId, product_name: product.name, status: s.status, sku: s.sku, retailer: s.retailer, source: s.source });
 
       // alert only on a flip TO in-stock from out-of-stock/unknown/blocked/never-seen
       if (s.status === "in-stock" && prev !== "in-stock") {
@@ -80,11 +105,18 @@ export async function GET() {
 
     // record every status change (marks the new state so we don't re-alert)
     if (changes.length > 0) {
-      await supabase.from("stock_alerts_log").insert(changes);
+      const { error: insertError } = await supabase.from("stock_alerts_log").insert(changes);
+      if (insertError) {
+        return NextResponse.json(
+          { error: `Alerts were processed but stock state could not be recorded: ${insertError.message}` },
+          { status: 502 }
+        );
+      }
     }
 
     return NextResponse.json({
       bestbuyConfigured: bestbuy.configured,
+      nowInStockListings: nowInStock.length,
       checked: checks.length,
       statusChanges: changes.length,
       flipsToInStock: flips.length,

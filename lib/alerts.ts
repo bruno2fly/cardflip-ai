@@ -13,8 +13,10 @@
 
 import type { ProductStock } from "@/lib/stock";
 
-export type Retailer = "bestbuy" | "target";
-export const RETAILER_LABEL: Record<Retailer, string> = { bestbuy: "Best Buy", target: "Target" };
+export type Retailer = string;
+export function retailerLabel(retailer: Retailer): string {
+  return ({ bestbuy: "Best Buy", target: "Target" } as Record<string, string>)[retailer] ?? retailer;
+}
 
 /**
  * Stock-check cadence — documentation + budget math for the tunable interval.
@@ -48,10 +50,10 @@ function stockEmailHtml(flips: StockFlip[]): string {
     <tr>
       <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;">
         <div style="font-weight:600;color:#111827;">${f.name}</div>
-        <div style="font-size:12px;color:#6b7280;">MSRP $${fmt(f.msrp)} · ${RETAILER_LABEL[f.retailer]}${f.price ? ` · verified $${fmt(f.price)}` : ""}</div>
+        <div style="font-size:12px;color:#6b7280;">MSRP $${fmt(f.msrp)} · ${retailerLabel(f.retailer)}${f.price ? ` · verified $${fmt(f.price)}` : ""}</div>
       </td>
       <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;text-align:center;">
-        <a href="${buyUrl(f)}" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-size:12px;font-weight:700;padding:8px 16px;border-radius:6px;">Buy at ${RETAILER_LABEL[f.retailer]} →</a>
+        <a href="${buyUrl(f)}" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-size:12px;font-weight:700;padding:8px 16px;border-radius:6px;">Buy at ${retailerLabel(f.retailer)} →</a>
       </td>
     </tr>`).join("");
 
@@ -79,7 +81,7 @@ async function sendEmail(flips: StockFlip[]): Promise<boolean> {
   const to = process.env.ALERT_EMAIL;
   if (!apiKey || !to) return false;
   try {
-    const retailers = Array.from(new Set(flips.map(f => RETAILER_LABEL[f.retailer]))).join(" + ");
+    const retailers = Array.from(new Set(flips.map(f => retailerLabel(f.retailer)))).join(" + ");
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -102,9 +104,9 @@ async function sendEmail(flips: StockFlip[]): Promise<boolean> {
 function smsBody(flips: StockFlip[]): string {
   if (flips.length === 1) {
     const f = flips[0];
-    return `🛒 CardFlip: ${f.name} back IN STOCK at ${RETAILER_LABEL[f.retailer]}${f.price ? ` ($${fmt(f.price)})` : ""}. Buy: ${buyUrl(f)}`;
+    return `🛒 CardFlip: ${f.name} back IN STOCK at ${retailerLabel(f.retailer)}${f.price ? ` ($${fmt(f.price)})` : ""}. Buy: ${buyUrl(f)}`;
   }
-  const retailers = Array.from(new Set(flips.map(f => RETAILER_LABEL[f.retailer]))).join(" + ");
+  const retailers = Array.from(new Set(flips.map(f => retailerLabel(f.retailer)))).join(" + ");
   const names = flips.slice(0, 4).map(f => f.name).join(", ");
   const more = flips.length > 4 ? ` +${flips.length - 4} more` : "";
   return `🛒 CardFlip: ${flips.length} products back IN STOCK at ${retailers}: ${names}${more}. Open CardFlip to buy fast.`;
@@ -145,7 +147,7 @@ async function sendDiscord(flips: StockFlip[]): Promise<boolean> {
   if (!webhook) return false;
   try {
     const embeds = flips.slice(0, 10).map(f => ({
-      title: `${f.name} — IN STOCK at ${RETAILER_LABEL[f.retailer]}`,
+      title: `${f.name} — IN STOCK at ${retailerLabel(f.retailer)}`,
       url: buyUrl(f),
       color: 0x059669,
       description: `MSRP $${fmt(f.msrp)}${f.price ? ` · verified $${fmt(f.price)}` : ""} · [Buy now →](${buyUrl(f)})`,

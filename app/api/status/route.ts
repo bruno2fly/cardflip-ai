@@ -4,6 +4,7 @@ import { getBestBuyStock } from "@/lib/stock";
 import { productUrl, parseTargetHtml } from "@/lib/targetStock";
 import { getSealedPricingCacheStatus } from "@/lib/sealedPricing";
 import { supabase } from "@/lib/supabase";
+import { fetchNowInStockListings, getNowInStockCacheInfo } from "@/lib/nowInStock";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -80,6 +81,13 @@ async function checkTarget(): Promise<Row> {
   } catch (err) {
     return { name: "Target scraping", status: "red", detail: `Fetch failed: ${err instanceof Error ? err.message : "error"}` };
   }
+}
+
+async function checkNowInStock(): Promise<Row> {
+  const listings = await fetchNowInStockListings(true);
+  const info = getNowInStockCacheInfo();
+  if (listings.length === 0) return { name: "NowInStock.net", status: "red", detail: "Live fetch failed or returned no parseable listings" };
+  return { name: "NowInStock.net", status: "green", detail: `Live page parsed — ${(info?.bytes ?? 0).toLocaleString()} bytes · ${listings.length} listings` };
 }
 
 // ---- Alerts (config checks only — never fires a real send) -------------------
@@ -207,9 +215,10 @@ async function checkSupabase(): Promise<Row> {
 }
 
 export async function GET() {
-  const [bestbuy, target, priceTrend, priceSource, sup, crons] = await Promise.all([
+  const [bestbuy, target, nowInStock, priceTrend, priceSource, sup, crons] = await Promise.all([
     checkBestBuy().catch((e): Row => ({ name: "Best Buy API", status: "red", detail: `check crashed: ${e}` })),
     checkTarget().catch((e): Row => ({ name: "Target scraping", status: "red", detail: `check crashed: ${e}` })),
+    checkNowInStock().catch((e): Row => ({ name: "NowInStock.net", status: "red", detail: `check crashed: ${e}` })),
     checkPriceTrend().catch((e): Row => ({ name: "Price trend history", status: "yellow", detail: `check crashed: ${e}` })),
     checkSealedPricing(),
     checkSupabase().catch((e): Row => ({ name: "Supabase connection", status: "red", detail: `check crashed: ${e}` })),
@@ -226,6 +235,7 @@ export async function GET() {
     { title: "Stock Monitoring", rows: [
       bestbuy,
       target,
+      nowInStock,
       { name: "Walmart", status: "gray", detail: "Not implemented — no Walmart stock integration exists yet" },
       { name: "Pokémon Center", status: "gray", detail: "Not implemented — no Pokémon Center stock integration exists yet" },
     ] },
