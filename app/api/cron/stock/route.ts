@@ -4,6 +4,7 @@ import { getBestBuyStock, getTargetStock, ProductStock } from "@/lib/stock";
 import { sendStockAlerts, StockFlip, Retailer } from "@/lib/alerts";
 import { supabase } from "@/lib/supabase";
 import { fetchNowInStockListings, matchToProduct } from "@/lib/nowInStock";
+import { getWatchlist } from "@/lib/watchlist";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,10 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const list = PRODUCTS.map(p => ({ id: p.id, name: p.name, tcin: p.targetTcin }));
+    const watchlist = await getWatchlist();
+    const catalogList = PRODUCTS.map(p => ({ id: p.id, name: p.name, tcin: p.targetTcin }));
+    const watchlistList = watchlist.map(p => ({ id: p.id, name: p.productName, tcin: p.targetTcin ?? undefined }));
+    const list = [...catalogList, ...watchlistList];
     const [bestbuy, target, nowInStock] = await Promise.all([
       getBestBuyStock(list, true),
       getTargetStock(list, true),
@@ -29,9 +33,14 @@ export async function GET() {
       ...(bestbuy.configured ? bestbuy.statuses.map(s => ({ ...s, retailer: "bestbuy", source: "direct" as const })) : []),
       ...target.statuses.map(s => ({ ...s, retailer: "target", source: "direct" as const })),
       ...nowInStock.flatMap(listing => {
-        const productId = matchToProduct(listing.rawName, PRODUCTS);
-        if (!productId) return [];
-        return [{
+        // Match each collection independently. If a user intentionally adds a
+        // curated product to the watchlist, its UUID still gets an independent
+        // dedup state rather than losing to the catalog id on a tie.
+        const ids = [
+          matchToProduct(listing.rawName, catalogList),
+          watchlistList.length > 0 ? matchToProduct(listing.rawName, watchlistList) : null,
+        ].filter((id): id is string => id != null);
+        return ids.map(productId => ({
           productId,
           status: listing.status === "preorder" ? "in-stock" as const : listing.status,
           sku: null,
@@ -39,7 +48,7 @@ export async function GET() {
           price: listing.price,
           retailer: listing.retailer,
           source: "nowinstock" as const,
-        }];
+        }));
       }),
     ];
     // A feed can contain more than one URL for the same product/retailer.
@@ -81,7 +90,10 @@ export async function GET() {
       if (!lastStatus.has(key)) lastStatus.set(key, row.status);
     }
 
-    const byId = new Map(PRODUCTS.map(p => [p.id, p]));
+    const byId = new Map<string, { name: string; msrp: number }>([
+      ...PRODUCTS.map(p => [p.id, { name: p.name, msrp: p.msrp }] as const),
+      ...watchlist.map(p => [p.id, { name: p.productName, msrp: p.msrp ?? 0 }] as const),
+    ]);
     const flips: StockFlip[] = [];
     const changes: { product_id: string; product_name: string; status: string; sku: string | null; retailer: Retailer; source: "direct" | "nowinstock" }[] = [];
 
@@ -89,7 +101,8 @@ export async function GET() {
       const prev = lastStatus.get(`${s.source}:${s.retailer}:${s.productId}`);
       if (prev === s.status) continue; // no change, nothing to log or alert
 
-      const product = byId.get(s.productId)!;
+      const product = byId.get(s.productId);
+      if (!product) continue;
       changes.push({ product_id: s.productId, product_name: product.name, status: s.status, sku: s.sku, retailer: s.retailer, source: s.source });
 
       // alert only on a flip TO in-stock from out-of-stock/unknown/blocked/never-seen
@@ -116,6 +129,7 @@ export async function GET() {
 
     return NextResponse.json({
       bestbuyConfigured: bestbuy.configured,
+      watchlistProducts: watchlist.length,
       nowInStockListings: nowInStock.length,
       checked: checks.length,
       statusChanges: changes.length,

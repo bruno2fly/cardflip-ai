@@ -35,7 +35,7 @@ export type ProductTypeGuess = "ETB" | "Booster Box" | "Booster Bundle" | "Premi
 
 const MP_SEARCH = "https://mp-search-api.tcgplayer.com/v1/search/request";
 const PRICEPOINTS = "https://mpapi.tcgplayer.com/v2/product";
-const CDN_IMG = (id: number) => `https://tcgplayer-cdn.tcgplayer.com/product/${id}_in_400x400.jpg`;
+export const CDN_IMG = (id: number) => `https://tcgplayer-cdn.tcgplayer.com/product/${id}_in_400x400.jpg`;
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)";
 
 // SKU noise we never want as products (cases, displays, half boxes, club bundles…)
@@ -63,9 +63,9 @@ export function guessType(name: string): ProductTypeGuess | null {
   return null;
 }
 
-type MpHit = { productId: number; productName: string };
+export type MpHit = { productId: number; productName: string };
 
-async function mpSearch(q: string, size = 12): Promise<MpHit[]> {
+export async function mpSearch(q: string, size = 12): Promise<MpHit[]> {
   const body = JSON.stringify({
     algorithm: "sales_synonym_v2",
     from: 0,
@@ -83,6 +83,24 @@ async function mpSearch(q: string, size = 12): Promise<MpHit[]> {
   const json = await res.json();
   return ((json?.results?.[0]?.results ?? []) as { productId: number; productName: string }[])
     .map(h => ({ productId: Math.trunc(h.productId), productName: h.productName }));
+}
+
+/** Live Normal market price for a TCGPlayer product id. */
+export async function fetchTcgMarketPrice(productId: number): Promise<number | null> {
+  try {
+    const response = await fetch(`${PRICEPOINTS}/${productId}/pricepoints`, {
+      headers: { "User-Agent": UA }, cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const points = await response.json();
+    const normal = Array.isArray(points)
+      ? points.find((p: { printingType?: string }) => p.printingType === "Normal") ?? points[0]
+      : null;
+    const market = typeof normal?.marketPrice === "number" ? normal.marketPrice : null;
+    return market != null && market > 0 ? market : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -202,16 +220,8 @@ export async function verifyCandidate(c: Candidate): Promise<Verification | null
     if (!type) return null;
 
     // live market price
-    const pp = await fetch(`${PRICEPOINTS}/${productId}/pricepoints`, {
-      headers: { "User-Agent": UA }, cache: "no-store",
-    });
-    if (!pp.ok) return null;
-    const points = await pp.json();
-    const normal = Array.isArray(points)
-      ? points.find((p: { printingType?: string }) => p.printingType === "Normal") ?? points[0]
-      : null;
-    const market = typeof normal?.marketPrice === "number" ? normal.marketPrice : null;
-    if (market == null || market <= 0) return null;
+    const market = await fetchTcgMarketPrice(productId);
+    if (market == null) return null;
 
     // live product image
     const img = await fetch(CDN_IMG(productId), { method: "HEAD", cache: "no-store" });
