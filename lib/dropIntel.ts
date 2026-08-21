@@ -2,7 +2,14 @@ const TYPA_URL = "https://www.typa.app/brands/pokemon";
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const TIMEOUT_MS = 10_000;
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36";
-const FORWARD_LOOKING = /\b(tonight|drop|loaded|backend|upcoming|expected|restocking)\b/i;
+const ACTIONABLE_BODY_SIGNAL = /\b(?:loaded|backend|pre[ -]?order(?:s|ed|ing)?|restocking|expected|upcoming|going live|goes live|just dropped|dropping (?:today|tonight|soon)|releas(?:e|es|ed|ing) (?:today|tonight|soon))\b/i;
+const NOISE_PATTERNS = [
+  /^here we go[.!…]*$/i,
+  /^only thing left(?:\s+in\s*stock)?(?:\s+now)?[.!…]*$/i,
+  /^reminder\s*[-:–—]?\s*all (?:of )?the\b/i,
+  /\b(?:restock|stock) notifications?\b[\s\S]*\b(?:queue|click (?:it|them)|going (?:out of|back in) stock)\b/i,
+  /\b(?:bot|notification|queue)\b[\s\S]*\b(?:how|works?|click|ignore|don't need|do not need)\b/i,
+];
 
 export type TypaCommunityUpdate = {
   headline: string;
@@ -27,6 +34,11 @@ function decodeHtml(value: string): string {
     .trim();
 }
 
+function isActionableSignal(body: string): boolean {
+  if (!body || NOISE_PATTERNS.some((pattern) => pattern.test(body))) return false;
+  return ACTIONABLE_BODY_SIGNAL.test(body);
+}
+
 export function parseTypaCommunityHtml(html: string): TypaCommunityUpdate[] {
   const articles = html.match(/<article\b(?=[^>]*\brole=["']button["'])(?=[^>]*\baria-label=["']Open Pokemon Alert update:)[^>]*>[\s\S]*?<\/article>/gi) ?? [];
   if (articles.length === 0) {
@@ -42,7 +54,7 @@ export function parseTypaCommunityHtml(html: string): TypaCommunityUpdate[] {
     const bodyContainer = article.match(/<div\b[^>]*class=["'][^"']*mt-1[^"']*text-sm[^"']*leading-\[1\.5\][^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? "";
     const body = decodeHtml(bodyContainer.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? "");
     if (!headline || !ageText) continue;
-    if (FORWARD_LOOKING.test(`${headline} ${body}`)) updates.push({ headline, ageText, body });
+    if (isActionableSignal(body)) updates.push({ headline, ageText, body });
   }
 
   if (updates.length === 0) console.warn("[dropIntel] TYPA community articles parsed, but none matched the forward-looking filter");
