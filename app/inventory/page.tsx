@@ -24,6 +24,8 @@ type SearchResult = {
   number: string;
   rarity?: string;
   images?: { small?: string; large?: string };
+  market?: number | null;   // TCGPlayer market price, comes straight from search
+  tcgProductId?: number;
 };
 
 function fmt(n: number) { return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -102,9 +104,9 @@ export default function Inventory() {
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        // Server-side proxy so the POKEMONTCG_API_KEY is used — direct
-        // browser calls get rate-limited and silently fail in production.
-        const q = encodeURIComponent(`name:*${query.trim()}*`);
+        // Plain free-text query — /api/search runs it through TCGPlayer's fuzzy
+        // search, which matches by name OR number OR a full pasted card string.
+        const q = encodeURIComponent(query.trim());
         const res = await fetch(`/api/search?q=${q}&pageSize=12`, { signal: controller.signal });
         if (!res.ok) throw new Error(`Search failed (${res.status})`);
         const json = await res.json();
@@ -129,6 +131,12 @@ export default function Inventory() {
     setSelected(r);
     setResults([]);
     setQuery("");
+    // TCGPlayer search already returns the market price — use it directly.
+    if (r.market != null) {
+      setForm(f => ({ ...f, current: f.current || r.market!.toFixed(2) }));
+      return;
+    }
+    // Fallback for the rare hit with no price on the search result.
     try {
       const res = await fetch(
         `/api/prices?name=${encodeURIComponent(r.name)}&set=${encodeURIComponent(r.set.name)}&number=${encodeURIComponent(r.number)}`

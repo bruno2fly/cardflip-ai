@@ -22,6 +22,8 @@ type SearchResult = {
   number: string;
   rarity?: string;
   images?: { small?: string; large?: string };
+  market?: number | null;   // TCGPlayer market price, comes straight from search
+  tcgProductId?: number;
 };
 
 type PriceState =
@@ -104,9 +106,9 @@ export default function Grading() {
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        // Server-side proxy so the POKEMONTCG_API_KEY is used — direct
-        // browser calls get rate-limited and silently fail in production.
-        const q = encodeURIComponent(`name:*${query.trim()}*`);
+        // Plain free-text query — /api/search runs it through TCGPlayer's fuzzy
+        // search, which matches by name OR number OR a full pasted card string.
+        const q = encodeURIComponent(query.trim());
         const res = await fetch(`/api/search?q=${q}&pageSize=12`, { signal: controller.signal });
         if (!res.ok) throw new Error(`Search failed (${res.status})`);
         const json = await res.json();
@@ -129,6 +131,12 @@ export default function Grading() {
     setSelected(r);
     setResults([]);
     setQuery("");
+    // TCGPlayer search already returns the raw market price — use it directly
+    // (works for brand-new cards the old pokemontcg.io price route never had).
+    if (r.market != null) {
+      setPriceState({ status: "ok", market: r.market, url: r.tcgProductId ? `https://www.tcgplayer.com/product/${r.tcgProductId}` : null });
+      return;
+    }
     setPriceState({ status: "loading" });
     try {
       const params = new URLSearchParams({ name: r.name, set: r.set.name, number: r.number });
