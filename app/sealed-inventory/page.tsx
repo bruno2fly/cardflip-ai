@@ -118,18 +118,27 @@ export default function SealedInventory() {
 
   /** On-demand hold/sell analysis for ONE owned/listed lot — real cost basis
    *  + live market + the same signal set the product-page cron uses. */
-  async function analyze(itemId: string) {
-    setAnalyzingId(itemId);
+  async function analyze(item: DbSealedItem) {
+    setAnalyzingId(item.id);
     try {
+      // send the lot's fields in the body — sealed_inventory is per-user now,
+      // so the shared server route can't re-read it; the client has it already.
       const res = await fetch("/api/verdicts/inventory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId }),
+        body: JSON.stringify({
+          itemId: item.id,
+          productId: item.product_id,
+          productName: item.product_name,
+          boughtPrice: Number(item.bought_price),
+          qty: item.qty,
+          currentMarket: item.current_market != null ? Number(item.current_market) : null,
+        }),
       });
       const json = await res.json();
       setVerdictEngineConfigured(Boolean(json.configured));
       if (json.configured && json.result) {
-        setVerdicts(prev => ({ ...prev, [`inv-${itemId}`]: json.result }));
+        setVerdicts(prev => ({ ...prev, [`inv-${item.id}`]: json.result }));
       }
     } catch { /* honest "not analyzed" state remains */ }
     setAnalyzingId(null);
@@ -399,7 +408,7 @@ export default function SealedInventory() {
                     }
                     return (
                       <button
-                        onClick={() => analyze(item.id)}
+                        onClick={() => analyze(item)}
                         disabled={isAnalyzing}
                         title={verdictEngineConfigured === false ? "Decision engine not enabled yet (PERPLEXITY_API_KEY not set)" : "Analyze real cost basis + live market data for a hold/sell verdict"}
                         className="flex items-center gap-1.5 text-xs font-semibold text-gray-300 hover:text-white border border-gray-700 hover:border-teal-700/50 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"

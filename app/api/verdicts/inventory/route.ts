@@ -10,18 +10,20 @@ import { computeVerdict, VerdictInputs } from "@/lib/verdicts";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/verdicts/inventory { itemId: sealed_inventory.id }
- * On-demand hold/sell verdict for ONE owned inventory lot, using its real
- * cost basis (bought_price, qty) + live market price + the same real
- * signal set the daily product cron uses. Stored under product_id
- * "inv-<sealed_inventory.id>" in product_verdicts so it's distinguishable
- * from curated/discovered product verdicts but reads through the same
- * table/UI pattern.
+ * POST /api/verdicts/inventory
+ *   { itemId, productId, productName, boughtPrice, qty, currentMarket? }
+ *
+ * On-demand hold/sell verdict for ONE owned inventory lot, using its real cost
+ * basis (boughtPrice, qty) + live market price + the same real signal set the
+ * daily product cron uses. Stored under product_id "inv-<itemId>" in
+ * product_verdicts (a SHARED table) so it reads through the same UI pattern.
+ *
+ * The lot fields are sent in the request body rather than re-read from the DB:
+ * sealed_inventory is now per-user (RLS-scoped to auth.uid()), and this route
+ * runs with the shared anon client which can't see another user's rows. The
+ * client already has the item, so it passes it in — no per-user read needed.
  *
  * Entirely inert without PERPLEXITY_API_KEY (configured:false, no-op).
- * On-demand (not cron) because cost basis is per-lot, not per-product —
- * computing it for every owned lot on a schedule would spend API budget on
- * lots Jason isn't actively deciding about right now.
  */
 export async function POST(req: Request) {
   if (!process.env.PERPLEXITY_API_KEY) {
@@ -37,19 +39,24 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { itemId } = body as { itemId?: unknown };
-  if (typeof itemId !== "string" || !itemId.trim()) {
+  const b = body as {
+    itemId?: unknown; productId?: unknown; productName?: unknown;
+    boughtPrice?: unknown; qty?: unknown; currentMarket?: unknown;
+  };
+  if (typeof b.itemId !== "string" || !b.itemId.trim()) {
     return NextResponse.json({ error: "Expected itemId string" }, { status: 400 });
   }
-
-  const { data: item, error: itemError } = await supabase
-    .from("sealed_inventory")
-    .select("*")
-    .eq("id", itemId)
-    .single();
-  if (itemError || !item) {
-    return NextResponse.json({ error: "Inventory item not found" }, { status: 404 });
+  if (typeof b.productId !== "string" || typeof b.productName !== "string" || typeof b.boughtPrice !== "number") {
+    return NextResponse.json({ error: "Expected productId, productName, boughtPrice" }, { status: 400 });
   }
+  const item = {
+    id: b.itemId,
+    product_id: b.productId,
+    product_name: b.productName,
+    bought_price: b.boughtPrice,
+    qty: typeof b.qty === "number" ? b.qty : 1,
+    current_market: typeof b.currentMarket === "number" ? b.currentMarket : null,
+  };
 
   const product = PRODUCTS.find(p => p.id === item.product_id);
   const productName: string = item.product_name;

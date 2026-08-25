@@ -2,7 +2,9 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays, Archive, Activity, Menu, X, Radio, Eye } from "lucide-react";
+import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays, Archive, Activity, Menu, X, LogOut } from "lucide-react";
+
+type SidebarProps = { userEmail?: string | null; onSignOut?: () => void };
 
 type NavItem = {
   href: string;
@@ -17,10 +19,8 @@ const sections: NavSection[] = [
   {
     title: "Sealed Product",
     items: [
-      { href: "/restocks", label: "🔴 Live Restocks", icon: Radio },
       { href: "/", label: "Sealed Products", icon: Package2 },
       { href: "/sealed-inventory", label: "Sealed Inventory", icon: Archive },
-      { href: "/watchlist", label: "⭐ Watchlist", icon: Eye },
       { href: "/releases", label: "Upcoming Releases", icon: CalendarDays },
     ],
   },
@@ -54,7 +54,7 @@ const sections: NavSection[] = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ userEmail, onSignOut }: SidebarProps) {
   const path = usePathname();
   const [starterMode, setStarterMode] = useState(false);
   // Mobile drawer open/closed. Closes automatically whenever the route changes.
@@ -171,7 +171,7 @@ export default function Sidebar() {
       </nav>
 
       {/* AI Agent Status */}
-      <div className="p-4 border-t border-gray-800">
+      <div className="p-4 border-t border-gray-800 space-y-3">
         <div className="bg-green-950/60 border border-green-800/40 rounded-lg p-3">
           <div className="flex items-center gap-2 mb-1">
             <span className="w-2 h-2 rounded-full bg-green-400 pulse-dot inline-block" />
@@ -183,6 +183,23 @@ export default function Sidebar() {
             <span className="text-blue-400 text-xs">Live Markets</span>
           </div>
         </div>
+
+        {/* Signed-in account + sign out */}
+        {userEmail && (
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-gray-600 text-[10px] uppercase tracking-wide">Signed in</div>
+              <div className="text-gray-300 text-xs truncate" title={userEmail}>{userEmail}</div>
+            </div>
+            <button
+              onClick={onSignOut}
+              title="Sign out"
+              className="flex-shrink-0 flex items-center gap-1 text-gray-400 hover:text-white border border-gray-700 hover:border-gray-600 rounded-md px-2 py-1 text-xs transition-colors"
+            >
+              <LogOut size={12} /> Sign out
+            </button>
+          </div>
+        )}
       </div>
       </aside>
     </>

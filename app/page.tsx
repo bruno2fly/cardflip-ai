@@ -5,8 +5,7 @@ import Link from "next/link";
 import { PRODUCTS, SealedProduct, ProductType, Hotness, tcgProductImg, tcgUrl, retailLinks } from "@/lib/products";
 import type { PriceTrend } from "@/lib/priceTrend";
 import { supabase } from "@/lib/supabase";
-import { addCuratedProductToWatchlist, WatchlistItem } from "@/lib/watchlist";
-import { Package2, Lightbulb, CheckCircle2, XCircle, ExternalLink, Archive, Loader2, X, Bell, HelpCircle, Clock, Tag, Zap, Eye } from "lucide-react";
+import { Package2, Lightbulb, CheckCircle2, XCircle, ExternalLink, Archive, Loader2, X, Bell, HelpCircle, Clock, Tag, Zap } from "lucide-react";
 
 // Live stock: Best Buy (official API) + Target (unofficial RedSky — often
 // blocked, degrades to Unknown). Walmart/Pokemon Center have no API at all,
@@ -169,45 +168,12 @@ export default function SealedTracker() {
   const [profileForm, setProfileForm] = useState<CheckoutProfile>(EMPTY_PROFILE);
   const [profileSaving, setProfileSaving] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const [watchedTcgIds, setWatchedTcgIds] = useState<Set<number>>(new Set());
-  const [watchedNames, setWatchedNames] = useState<Set<string>>(new Set());
-  const [watchlistAddingId, setWatchlistAddingId] = useState<string | null>(null);
-  const [watchlistErrors, setWatchlistErrors] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const response = await fetch("/api/watchlist", { cache: "no-store" });
-        if (!response.ok) return;
-        const items = await response.json() as WatchlistItem[];
-        setWatchedTcgIds(new Set(items.map(item => item.tcgProductId)));
-        setWatchedNames(new Set(items.map(item => item.productName.toLowerCase())));
-      } catch { /* buttons remain available when status cannot be loaded */ }
-    })();
-  }, []);
-
-  async function addProductToWatchlist(product: SealedProduct) {
-    if (watchlistAddingId) return;
-    setWatchlistAddingId(product.id);
-    setWatchlistErrors(current => ({ ...current, [product.id]: "" }));
-    const result = await addCuratedProductToWatchlist(product);
-    if (result.ok) {
-      setWatchedTcgIds(current => new Set(current).add(result.item.tcgProductId));
-      setWatchedNames(current => new Set(current).add(result.item.productName.toLowerCase()).add(product.name.toLowerCase()));
-    } else if (result.reason.includes("already on your watchlist")) {
-      if (product.tcgProductId) setWatchedTcgIds(current => new Set(current).add(product.tcgProductId!));
-      setWatchedNames(current => new Set(current).add(product.name.toLowerCase()));
-    } else {
-      setWatchlistErrors(current => ({ ...current, [product.id]: result.reason }));
-    }
-    setWatchlistAddingId(null);
-  }
-
-  // Load the single checkout profile row (id = 1)
+  // Load THIS user's checkout profile (RLS returns only their own row)
   useEffect(() => {
     if (!supabase) return;
     (async () => {
-      const { data } = await supabase.from("checkout_profile").select("*").eq("id", 1).maybeSingle();
+      const { data } = await supabase.from("checkout_profile").select("*").maybeSingle();
       if (data) { setProfile(data as CheckoutProfile); setProfileForm(data as CheckoutProfile); }
     })();
   }, []);
@@ -215,8 +181,13 @@ export default function SealedTracker() {
   async function saveProfile() {
     if (!supabase) return;
     setProfileSaving(true);
-    const row = { ...profileForm, id: 1, updated_at: new Date().toISOString() };
-    const { error } = await supabase.from("checkout_profile").upsert(row, { onConflict: "id" });
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth?.user) { setProfileSaving(false); return; }
+    // one row per user (keyed by user_id); strip any legacy singleton `id`
+    const { id: _legacyId, ...rest } = profileForm as CheckoutProfile & { id?: number };
+    void _legacyId;
+    const row = { ...rest, user_id: auth.user.id, updated_at: new Date().toISOString() };
+    const { error } = await supabase.from("checkout_profile").upsert(row, { onConflict: "user_id" });
     if (!error) { setProfile(row); setEditingProfile(false); }
     setProfileSaving(false);
   }
@@ -445,8 +416,6 @@ export default function SealedTracker() {
           const hasPrice = live != null || (!isNaN(manual) && manual > 0);
           const demand = momentumBanner(trends[product.id], product);
           const verdict = verdicts[product.id];
-          const isWatching = (product.tcgProductId != null && watchedTcgIds.has(product.tcgProductId))
-            || watchedNames.has(product.name.toLowerCase());
 
           // Real acquisition risk: the market price above is genuinely live/verified
           // data, but MSRP is just the list price -- whether Jason can actually buy
@@ -616,28 +585,6 @@ export default function SealedTracker() {
 
               {/* Actions — buying (retail) vs selling (secondary) */}
               <div className="mt-auto space-y-3">
-                {!discoveredIds.has(product.id) && (
-                  <div>
-                    {isWatching ? (
-                      <Link
-                        href="/watchlist"
-                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-green-700/50 bg-green-950/60 px-3 py-2 text-xs font-semibold text-green-400 transition-colors hover:bg-green-950"
-                      >
-                        <CheckCircle2 size={13} /> Watching
-                      </Link>
-                    ) : (
-                      <button
-                        onClick={() => addProductToWatchlist(product)}
-                        disabled={watchlistAddingId != null || !supabase}
-                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-700 bg-gray-950/40 px-3 py-2 text-xs font-semibold text-gray-300 transition-colors hover:border-yellow-400/40 hover:text-yellow-400 disabled:opacity-50"
-                      >
-                        {watchlistAddingId === product.id ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />}
-                        {watchlistAddingId === product.id ? "Adding…" : "+ Add to Watchlist"}
-                      </button>
-                    )}
-                    {watchlistErrors[product.id] && <p className="mt-1.5 text-xs text-red-400" role="alert">{watchlistErrors[product.id]}</p>}
-                  </div>
-                )}
                 {(() => {
                   const targetStock = stock.target[product.id] ?? { status: "unknown" as const, url: null, price: null };
                   const bestbuyStock = stock.bestbuy[product.id] ?? { status: "unknown" as const, url: null, price: null };
