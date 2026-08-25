@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
-import { Loader2, LogIn } from "lucide-react";
+import { Loader2, LogIn, UserPlus } from "lucide-react";
 
 /**
  * Auth gate for the whole app.
@@ -60,26 +60,64 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function LoginScreen() {
+  const [mode, setMode] = useState<"signin" | "create">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passcode, setPasscode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function switchMode(next: "signin" | "create") {
+    setMode(next);
+    setError(null);
+    setPassword("");
+    setPasscode("");
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!supabase || busy) return;
     setBusy(true);
     setError(null);
+
+    if (mode === "create") {
+      // Passcode is verified server-side; on success we sign the new user in.
+      try {
+        const res = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim(), password, passcode }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(json.error || "Could not create the account.");
+          setBusy(false);
+          return;
+        }
+      } catch {
+        setError("Network error creating the account. Try again.");
+        setBusy(false);
+        return;
+      }
+    }
+
+    // Sign in (both for normal sign-in and right after creating an account)
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     if (error) {
-      setError(error.message || "Sign-in failed. Check your email and password.");
+      setError(
+        mode === "create"
+          ? "Account created, but sign-in failed — try signing in."
+          : error.message || "Sign-in failed. Check your email and password."
+      );
       setBusy(false);
     }
-    // on success, onAuthStateChange in AppShell swaps to the app — no navigation needed
+    // on success, onAuthStateChange in AppShell swaps to the app — no navigation
   }
 
+  const creating = mode === "create";
+
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-gray-950">
+    <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-gray-950">
       <div className="w-full max-w-sm">
         <div className="flex items-center gap-3 mb-6 justify-center">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-lg font-bold text-gray-900">🃏</div>
@@ -89,8 +127,24 @@ function LoginScreen() {
           </div>
         </div>
 
+        {/* Sign in / Create toggle */}
+        <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-lg p-1 mb-3">
+          {(["signin", "create"] as const).map(m => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => switchMode(m)}
+              className={`flex-1 text-xs font-semibold px-3 py-2 rounded-md transition-colors ${
+                mode === m ? "bg-yellow-400 text-gray-900" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              {m === "signin" ? "Sign in" : "Create account"}
+            </button>
+          ))}
+        </div>
+
         <form onSubmit={submit} className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
-          <h1 className="text-white font-semibold text-lg">Sign in</h1>
+          <h1 className="text-white font-semibold text-lg">{creating ? "Create account" : "Sign in"}</h1>
 
           <div className="space-y-1">
             <label className="text-gray-400 text-xs font-medium">Email</label>
@@ -105,12 +159,24 @@ function LoginScreen() {
           <div className="space-y-1">
             <label className="text-gray-400 text-xs font-medium">Password</label>
             <input
-              type="password" autoComplete="current-password" required value={password}
+              type="password" autoComplete={creating ? "new-password" : "current-password"} required value={password}
               onChange={e => setPassword(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400/50"
-              placeholder="••••••••"
+              placeholder={creating ? "at least 6 characters" : "••••••••"}
             />
           </div>
+
+          {creating && (
+            <div className="space-y-1">
+              <label className="text-gray-400 text-xs font-medium">Admin passcode</label>
+              <input
+                type="password" required value={passcode}
+                onChange={e => setPasscode(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400/50"
+                placeholder="required to create an account"
+              />
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-950/50 border border-red-800/50 text-red-300 text-xs rounded-lg px-3 py-2">{error}</div>
@@ -120,11 +186,14 @@ function LoginScreen() {
             type="submit" disabled={busy}
             className="w-full flex items-center justify-center gap-2 bg-yellow-400 hover:bg-yellow-300 disabled:opacity-50 text-gray-900 font-semibold text-sm px-4 py-2.5 rounded-lg transition-colors"
           >
-            {busy ? <Loader2 size={15} className="animate-spin" /> : <LogIn size={15} />} Sign in
+            {busy ? <Loader2 size={15} className="animate-spin" /> : creating ? <UserPlus size={15} /> : <LogIn size={15} />}
+            {creating ? "Create account & sign in" : "Sign in"}
           </button>
 
           <p className="text-gray-600 text-[11px] leading-relaxed text-center pt-1">
-            Accounts are invite-only — created by the admin. Need access? Ask the admin to add you in Supabase.
+            {creating
+              ? "New accounts need the admin passcode. Each account gets its own private inventory & watchlist."
+              : "Don't have an account? Switch to Create account (you'll need the admin passcode)."}
           </p>
         </form>
       </div>
