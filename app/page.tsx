@@ -621,28 +621,26 @@ export default function SealedTracker() {
 
               {/* Actions — buying (retail) vs selling (secondary) */}
               <div className="mt-auto space-y-3">
-                {!discoveredIds.has(product.id) && (
-                  <div>
-                    {isWatching ? (
-                      <Link
-                        href="/watchlist"
-                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-green-700/50 bg-green-950/60 px-3 py-2 text-xs font-semibold text-green-400 transition-colors hover:bg-green-950"
-                      >
-                        <CheckCircle2 size={13} /> Watching
-                      </Link>
-                    ) : (
-                      <button
-                        onClick={() => addProductToWatchlist(product)}
-                        disabled={watchlistAddingId != null || !supabase}
-                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-700 bg-gray-950/40 px-3 py-2 text-xs font-semibold text-gray-300 transition-colors hover:border-yellow-400/40 hover:text-yellow-400 disabled:opacity-50"
-                      >
-                        {watchlistAddingId === product.id ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />}
-                        {watchlistAddingId === product.id ? "Adding…" : "+ Add to Watchlist"}
-                      </button>
-                    )}
-                    {watchlistErrors[product.id] && <p className="mt-1.5 text-xs text-red-400" role="alert">{watchlistErrors[product.id]}</p>}
-                  </div>
-                )}
+                <div>
+                  {isWatching ? (
+                    <Link
+                      href="/watchlist"
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-green-700/50 bg-green-950/60 px-3 py-2 text-xs font-semibold text-green-400 transition-colors hover:bg-green-950"
+                    >
+                      <CheckCircle2 size={13} /> Watching
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => addProductToWatchlist(product)}
+                      disabled={watchlistAddingId != null || !supabase}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-700 bg-gray-950/40 px-3 py-2 text-xs font-semibold text-gray-300 transition-colors hover:border-yellow-400/40 hover:text-yellow-400 disabled:opacity-50"
+                    >
+                      {watchlistAddingId === product.id ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />}
+                      {watchlistAddingId === product.id ? "Adding…" : "+ Add to Watchlist"}
+                    </button>
+                  )}
+                  {watchlistErrors[product.id] && <p className="mt-1.5 text-xs text-red-400" role="alert">{watchlistErrors[product.id]}</p>}
+                </div>
                 {(() => {
                   const targetStock = stock.target[product.id] ?? { status: "unknown" as const, url: null, price: null };
                   const bestbuyStock = stock.bestbuy[product.id] ?? { status: "unknown" as const, url: null, price: null };
