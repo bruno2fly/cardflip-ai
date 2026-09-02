@@ -127,10 +127,27 @@ export async function addToWatchlist(
 export async function addCuratedProductToWatchlist(product: SealedProduct): Promise<AddResult> {
   if (typeof window !== "undefined") {
     try {
+      // Send the fields the server actually needs to add this item, rather
+      // than just the id. Curated products live in a static array the server
+      // can look up by id, but auto-discovered products (id like `disc-123`)
+      // never appear in that array -- looking them up by id alone 404'd with
+      // "Curated product not found", even though the watchlist insert logic
+      // fully supports them via tcgProductId. Sending the payload directly
+      // works for both sources.
       const response = await fetch("/api/watchlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId: product.id }),
+        body: JSON.stringify({
+          product: {
+            id: product.id,
+            name: product.name,
+            type: product.type,
+            msrp: product.msrp,
+            imageUrl: product.imageUrl,
+            tcgProductId: product.tcgProductId ?? null,
+            targetTcin: product.targetTcin ?? null,
+          },
+        }),
       });
       return await response.json();
     } catch {
