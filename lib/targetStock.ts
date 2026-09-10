@@ -109,24 +109,83 @@ export type TargetStockResult = {
 };
 
 /**
+ * Stateless round-robin batch selection.
+ *
+ * WHY: we check Target product pages sequentially with a REQUEST_GAP_MS pause
+ * between each (deliberately gentle, human-paced). At ~1–2s per page that caps a
+ * single run at a few dozen products before the 2-minute stock cron would
+ * overlap itself. Once the monitored set grows large (the Target catalog makes
+ * up to 639 products trackable), checking all of them every run would both
+ * overrun the window and hammer Target. So instead of checking harder, we
+ * round-robin: each run checks up to `maxPerRun` TCINs, advancing the window
+ * every run, so every product is covered within ceil(N/maxPerRun) runs. At the
+ * default 40/run on a 2-minute cadence, 639 products are each checked about
+ * every ~32 minutes — plenty fresh for a restock monitor, far kinder than 639
+ * hits every 2 minutes.
+ *
+ * STATELESS: the window index comes from wall-clock time (which interval we're
+ * in), so no cursor is stored and consecutive runs land on different slices.
+ * The list is sorted by a stable key first so slices don't reshuffle run to run.
+ */
+export function selectRoundRobinBatch<T>(
+  items: T[],
+  keyOf: (item: T) => string | number,
+  maxPerRun: number,
+  intervalMs: number,
+  now: number = Date.now()
+): T[] {
+  if (maxPerRun <= 0 || items.length <= maxPerRun) return items;
+  const sorted = [...items].sort((a, b) => String(keyOf(a)).localeCompare(String(keyOf(b))));
+  const batches = Math.ceil(sorted.length / maxPerRun);
+  const index = Math.floor(now / Math.max(1, intervalMs)) % batches;
+  const start = index * maxPerRun;
+  return sorted.slice(start, start + maxPerRun);
+}
+
+export type TargetBatchOptions = {
+  /** Max TCINs to actually fetch this run; the rest are skipped (not fetched). */
+  maxPerRun: number;
+  /** Cron cadence in ms — advances the round-robin window one step per run. */
+  intervalMs: number;
+  now?: number;
+};
+
+/**
  * Check Target availability for the given products via their direct product
  * pages. Only products with a pinned `tcin` are monitored; the rest return
  * "unknown" (manual check), exactly like an un-pinned product today. Sequential
  * with a small gap — gentle, human-paced, no aggressive hammering.
+ *
+ * When `batch` is passed AND more TCINs are monitored than `maxPerRun`, only a
+ * rotating slice is fetched this run; the un-selected TCIN products are simply
+ * omitted from the result (NOT reported as "unknown"), so a caller like the
+ * stock cron never sees a spurious state change for a product it just didn't
+ * check this cycle. Small lists (and callers that pass no `batch`) check
+ * everything, exactly as before — this is purely additive.
  */
 export async function getTargetStockDirect(
-  products: { id: string; tcin?: number }[]
+  products: { id: string; tcin?: number }[],
+  batch?: TargetBatchOptions
 ): Promise<TargetStockResult> {
   const statuses: ProductStock[] = [];
-  let monitored = 0;
   let blocked = 0;
 
-  for (const p of products) {
-    if (!p.tcin) {
-      statuses.push({ productId: p.id, status: "unknown", sku: null, url: null, price: null });
-      continue;
-    }
-    monitored++;
+  const withTcin = products.filter((p): p is { id: string; tcin: number } => Boolean(p.tcin));
+  const withoutTcin = products.filter(p => !p.tcin);
+
+  // Products with no TCIN are free (no fetch) — always pass through as unknown,
+  // preserving today's shape for the caller.
+  for (const p of withoutTcin) {
+    statuses.push({ productId: p.id, status: "unknown", sku: null, url: null, price: null });
+  }
+
+  // Round-robin only engages when batching is requested and the set is large.
+  const toCheck = batch
+    ? selectRoundRobinBatch(withTcin, p => p.tcin, batch.maxPerRun, batch.intervalMs, batch.now)
+    : withTcin;
+  const monitored = toCheck.length;
+
+  for (const p of toCheck) {
     const r = await checkOne(p.id, p.tcin);
     if (r.blocked) blocked++;
     statuses.push({ productId: r.productId, status: r.status, sku: r.sku, url: r.url, price: r.price });

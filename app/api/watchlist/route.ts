@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PRODUCTS, type SealedProduct } from "@/lib/products";
-import { addCuratedProductToWatchlist, addToWatchlist, getWatchlist } from "@/lib/watchlist";
+import { addCuratedProductToWatchlist, addTargetCatalogToWatchlist, addToWatchlist, getWatchlist } from "@/lib/watchlist";
 
 export const dynamic = "force-dynamic";
 
@@ -44,9 +44,39 @@ function productFromPayload(body: ProductPayload): SealedProduct | null {
   };
 }
 
+type TargetProductPayload = {
+  tcin?: unknown;
+  name?: unknown;
+  price?: unknown;
+  url?: unknown;
+};
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { query?: unknown; productId?: unknown; product?: ProductPayload };
+    const body = await request.json() as {
+      query?: unknown;
+      productId?: unknown;
+      product?: ProductPayload;
+      targetProduct?: TargetProductPayload;
+    };
+
+    // Target-catalog path: a product identified by its Target TCIN + direct URL
+    // (usually no TCGPlayer counterpart). Added with the TCIN pre-filled so the
+    // existing stock cron monitors it and alerts through the same channels.
+    if (body.targetProduct) {
+      const tp = body.targetProduct;
+      const tcin = typeof tp.tcin === "number" ? tp.tcin : Number(tp.tcin);
+      if (!Number.isFinite(tcin) || typeof tp.name !== "string" || !tp.name.trim()) {
+        return NextResponse.json({ ok: false, reason: "Invalid Target product payload." }, { status: 400 });
+      }
+      const result = await addTargetCatalogToWatchlist({
+        tcin,
+        name: tp.name.trim(),
+        price: typeof tp.price === "number" ? tp.price : null,
+        url: typeof tp.url === "string" ? tp.url : null,
+      });
+      return NextResponse.json(result, { status: result.ok ? 201 : 400 });
+    }
 
     // Legacy path: curated product looked up by id in the static array.
     // Kept for backward compatibility with any older client bundle still

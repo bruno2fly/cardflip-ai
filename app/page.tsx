@@ -180,7 +180,7 @@ export default function SealedTracker() {
         const response = await fetch("/api/watchlist", { cache: "no-store" });
         if (!response.ok) return;
         const items = await response.json() as WatchlistItem[];
-        setWatchedTcgIds(new Set(items.map(item => item.tcgProductId)));
+        setWatchedTcgIds(new Set(items.map(item => item.tcgProductId).filter((id): id is number => id != null)));
         setWatchedNames(new Set(items.map(item => item.productName.toLowerCase())));
       } catch { /* buttons remain available when status cannot be loaded */ }
     })();
@@ -192,7 +192,7 @@ export default function SealedTracker() {
     setWatchlistErrors(current => ({ ...current, [product.id]: "" }));
     const result = await addCuratedProductToWatchlist(product);
     if (result.ok) {
-      setWatchedTcgIds(current => new Set(current).add(result.item.tcgProductId));
+      if (result.item.tcgProductId != null) setWatchedTcgIds(current => new Set(current).add(result.item.tcgProductId!));
       setWatchedNames(current => new Set(current).add(result.item.productName.toLowerCase()).add(product.name.toLowerCase()));
     } else if (result.reason.includes("already on your watchlist")) {
       if (product.tcgProductId) setWatchedTcgIds(current => new Set(current).add(product.tcgProductId!));

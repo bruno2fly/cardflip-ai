@@ -13,7 +13,11 @@ export async function GET() {
     const [listings, target, prices] = await Promise.all([
       fetchNowInStockListings(),
       getTargetStockDirect(items.map(item => ({ id: item.id, tcin: item.targetTcin ?? undefined }))),
-      Promise.all(items.map(async item => ({ id: item.id, market: await fetchTcgMarketPrice(item.tcgProductId) }))),
+      // Target-catalog rows have no TCGPlayer id → no market price to fetch.
+      Promise.all(items.map(async item => ({
+        id: item.id,
+        market: item.tcgProductId != null ? await fetchTcgMarketPrice(item.tcgProductId) : null,
+      }))),
     ]);
 
     const nowInStock = listings.flatMap(listing => {

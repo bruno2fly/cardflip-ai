@@ -91,13 +91,15 @@ let targetCache: StockResult | null = null;
  */
 export async function getTargetStock(
   products: { id: string; name: string; tcin?: number }[],
-  force = false
+  force = false,
+  batch?: import("@/lib/targetStock").TargetBatchOptions
 ): Promise<StockResult> {
   if (!force && targetCache && Date.now() - targetCache.checkedAt < CACHE_TTL_MS) return targetCache;
 
   const { getTargetStockDirect } = await import("@/lib/targetStock");
   const { statuses, monitored, blocked } = await getTargetStockDirect(
-    products.map(p => ({ id: p.id, tcin: p.tcin }))
+    products.map(p => ({ id: p.id, tcin: p.tcin })),
+    batch
   );
   if (monitored > 0 && blocked === monitored) {
     console.warn(`[stock] Target: all ${monitored} monitored products hit the bot-wall this run — all degraded to unknown`);

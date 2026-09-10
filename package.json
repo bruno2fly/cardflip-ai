@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "import:target-catalog": "npx --yes tsx scripts/import-target-catalog.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import { PRODUCTS } from "@/lib/products";
 import { getBestBuyStock, getTargetStock, ProductStock } from "@/lib/stock";
-import { sendStockAlerts, StockFlip, Retailer } from "@/lib/alerts";
+import { sendStockAlerts, StockFlip, Retailer, STOCK_CHECK_INTERVAL_MINUTES } from "@/lib/alerts";
 import { supabase } from "@/lib/supabase";
 import { fetchNowInStockListings, matchToProduct } from "@/lib/nowInStock";
 import { getWatchlist } from "@/lib/watchlist";
 
 export const dynamic = "force-dynamic";
+
+// Cap on how many Target TCINs are fetched per stock-cron run. The Target
+// watchlist can now hold up to hundreds of products (via the Target catalog),
+// and checking all of them sequentially every 2 minutes would overrun the run
+// and hammer Target. getTargetStock round-robins a rotating slice of this size
+// per run (see selectRoundRobinBatch in lib/targetStock.ts); every product is
+// still covered within ceil(N/cap) runs. Tune with TARGET_MAX_CHECKS_PER_RUN.
+const TARGET_MAX_CHECKS_PER_RUN = Number(process.env.TARGET_MAX_CHECKS_PER_RUN) || 40;
 
 /**
  * GET /api/cron/stock — cadence in vercel.json; see STOCK_CHECK_INTERVAL_MINUTES
@@ -25,7 +33,11 @@ export async function GET() {
     const list = [...catalogList, ...watchlistList];
     const [bestbuy, target, nowInStock] = await Promise.all([
       getBestBuyStock(list, true),
-      getTargetStock(list, true),
+      // Round-robin the Target checks so a large monitored set stays polite.
+      getTargetStock(list, true, {
+        maxPerRun: TARGET_MAX_CHECKS_PER_RUN,
+        intervalMs: STOCK_CHECK_INTERVAL_MINUTES * 60_000,
+      }),
       fetchNowInStockListings(true),
     ]);
 
