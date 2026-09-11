@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays, Archive, Activity, Menu, X, Radio, Eye, LogOut, Crosshair, Radar } from "lucide-react";
+import { Target, Package, Zap, Tag, Award, Boxes, Lock, BookOpen, Package2, CalendarDays, Archive, Activity, Menu, X, Eye, LogOut, Crosshair, Radar, ShoppingCart } from "lucide-react";
 
 type SidebarProps = { userEmail?: string | null; onSignOut?: () => void };
 
@@ -19,8 +19,8 @@ const sections: NavSection[] = [
   {
     title: "Sealed Product",
     items: [
-      { href: "/drops", label: "🎯 Drops", icon: Crosshair },
-      { href: "/restocks", label: "🔴 Live Restocks", icon: Radio },
+      { href: "/restocks", label: "🎯 Drops", icon: Crosshair },
+      { href: "/drops", label: "🟢 Buy Now", icon: ShoppingCart },
       { href: "/", label: "Sealed Products", icon: Package2 },
       { href: "/sealed-inventory", label: "Sealed Inventory", icon: Archive },
       { href: "/watchlist", label: "⭐ Watchlist", icon: Eye },

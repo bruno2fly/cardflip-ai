@@ -1,13 +1,16 @@
 /**
- * Manually curated restock/drop intel — Bruno/Jason paste in real finds
- * from Reddit, X, restock-tracker sites, etc. faster than any scraper
- * could react. Renders in the same "Early Intel" section on /releases
- * as Serebii/r/PokeLeaks (via lib/intel.ts), confidence "unverified"
- * since it's community-sourced, not an official pokemon.com confirmation.
+ * Manually curated release/leak intel — Bruno/Jason paste in real finds from
+ * Serebii/r/PokeLeaks-adjacent sources that belong in the "Early Intel" section
+ * on /releases (confidence "unverified"), NOT time-sensitive retail drops.
  *
- * To add a new manual find: append an entry below with a real sourceUrl.
- * Stale entries should be removed once the drop has passed (a `foundAt`
- * timestamp is stamped automatically at request time, not stored here).
+ * IMPORTANT: actionable retail drops ("Target loads X tonight at 3AM") now live
+ * in lib/dropEvents.ts, which renders the get-ready product board on the Drops
+ * page AND auto-expires once the drop passes. Do NOT re-add "tonight"-style drop
+ * intel here — it has no expiry and goes stale (that's exactly what happened to
+ * the old 30th Anniversary entry, which is why this list is now empty).
+ *
+ * To add a genuine leak here: append an entry with a real sourceUrl. A `foundAt`
+ * timestamp is stamped automatically at request time (see lib/intel.ts).
  */
 
 export type ManualFind = {
@@ -17,13 +20,4 @@ export type ManualFind = {
   detail: string;
 };
 
-export const MANUAL_FINDS: ManualFind[] = [
-  {
-    setName: "30th Anniversary — Target Retail Drop (tonight)",
-    releaseDate: null,
-    sourceUrl:
-      "https://www.reddit.com/r/PokemonDeals/comments/1vnlfbv/target_pok%C3%A9mon_30th_anniversary_drop_tonight_814/",
-    detail:
-      "Reddit (r/PokemonDeals, r/pokemoncards), PokeFindr (X), and restockd.app all report Target loading 30th Anniversary product for a drop tonight, ~12AM PT / 3AM ET: Elite Trainer Box, Poster Collection, ex Box (Greninja), ex Box (Sylveon), Tech Sticker Collection, Knockout Collection, Celebration Tins. Also watch Pitch Black ETB/Booster Bundle and Prismatic Evolutions SPC on the same overnight wave — restockd.app flagged those loading alongside. Backend-activity based, not a confirmed live restock yet — check direct Target product-page links close to 3AM ET.",
-  },
-];
+export const MANUAL_FINDS: ManualFind[] = [];
