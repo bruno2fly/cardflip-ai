@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/stock",
-      "schedule": "*/2 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/cron/leak-scan",

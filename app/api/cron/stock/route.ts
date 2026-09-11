@@ -7,6 +7,12 @@ import { fetchNowInStockListings, matchToProduct } from "@/lib/nowInStock";
 import { getWatchlist } from "@/lib/watchlist";
 
 export const dynamic = "force-dynamic";
+// Cron fires at most once/minute on Vercel (Pro min interval; Hobby is daily-
+// only). To get ~30s effective detection latency during a hot drop window
+// without a second cron entry, one invocation runs the full check pass
+// TWICE: once immediately, then again after an in-function 30s sleep.
+// maxDuration must cover both passes + the sleep.
+export const maxDuration = 60;
 
 // Cap on how many Target TCINs are fetched per stock-cron run. The Target
 // watchlist can now hold up to hundreds of products (via the Target catalog),
@@ -16,16 +22,18 @@ export const dynamic = "force-dynamic";
 // still covered within ceil(N/cap) runs. Tune with TARGET_MAX_CHECKS_PER_RUN.
 const TARGET_MAX_CHECKS_PER_RUN = Number(process.env.TARGET_MAX_CHECKS_PER_RUN) || 40;
 
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+type PassResult = Record<string, unknown>;
+
 /**
- * GET /api/cron/stock — cadence in vercel.json; see STOCK_CHECK_INTERVAL_MINUTES
- * in lib/alerts.ts for the tunable interval + Best Buy quota math.
- * Checks Best Buy (official API) AND Target (direct product page; degrades to
- * "unknown"/"blocked" when the bot-wall blocks). Alerts ONLY on a flip to
- * in-stock, per retailer, across email + SMS + Discord. State transitions
- * live in Supabase `stock_alerts_log` keyed by (retailer, product_id) so a
- * single flip fires each channel exactly once and never re-alerts.
+ * One full stock-check pass: Best Buy + Target + nowInStock, flip detection
+ * against Supabase, alert fan-out. Extracted so GET() can run it twice per
+ * invocation (see maxDuration comment above) for ~30s effective cadence.
  */
-export async function GET() {
+async function runOnce(): Promise<PassResult> {
   try {
     const watchlist = await getWatchlist();
     const catalogList = PRODUCTS.map(p => ({ id: p.id, name: p.name, tcin: p.targetTcin }));
@@ -75,12 +83,10 @@ export async function GET() {
     const checks = Array.from(checksByKey.values());
 
     if (checks.length === 0) {
-      return NextResponse.json({ skipped: "No retailer checks ran (BESTBUY_API_KEY not set, Target returned nothing)" });
+      return { skipped: "No retailer checks ran (BESTBUY_API_KEY not set, Target returned nothing)" };
     }
     if (!supabase) {
-      return NextResponse.json({
-        skipped: "Supabase not configured — stock_alerts_log needed for flip detection",
-      });
+      return { skipped: "Supabase not configured — stock_alerts_log needed for flip detection" };
     }
 
     // last recorded status per (retailer, product). FAIL LOUD on read error:
@@ -91,10 +97,7 @@ export async function GET() {
       .select("product_id, retailer, source, status, created_at")
       .order("created_at", { ascending: false });
     if (logError) {
-      return NextResponse.json(
-        { error: `Could not read stock_alerts_log (refusing to guess): ${logError.message}` },
-        { status: 502 }
-      );
+      return { error: `Could not read stock_alerts_log (refusing to guess): ${logError.message}` };
     }
     const lastStatus = new Map<string, string>();
     for (const row of logRows ?? []) {
@@ -132,14 +135,11 @@ export async function GET() {
     if (changes.length > 0) {
       const { error: insertError } = await supabase.from("stock_alerts_log").insert(changes);
       if (insertError) {
-        return NextResponse.json(
-          { error: `Alerts were processed but stock state could not be recorded: ${insertError.message}` },
-          { status: 502 }
-        );
+        return { error: `Alerts were processed but stock state could not be recorded: ${insertError.message}` };
       }
     }
 
-    return NextResponse.json({
+    return {
       bestbuyConfigured: bestbuy.configured,
       watchlistProducts: watchlist.length,
       nowInStockListings: nowInStock.length,
@@ -152,9 +152,31 @@ export async function GET() {
         sms: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER && process.env.TARGET_ALERT_PHONE),
         discord: Boolean(process.env.DISCORD_ALERT_WEBHOOK_URL),
       },
-    });
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: `Stock scan failed: ${message}` }, { status: 502 });
+    return { error: `Stock scan failed: ${message}` };
   }
+}
+
+/**
+ * GET /api/cron/stock — cadence in vercel.json; see STOCK_CHECK_INTERVAL_MINUTES
+ * in lib/alerts.ts for the tunable interval + Best Buy quota math.
+ * Checks Best Buy (official API) AND Target (direct product page; degrades to
+ * "unknown"/"blocked" when the bot-wall blocks). Alerts ONLY on a flip to
+ * in-stock, per retailer, across email + SMS + Discord. State transitions
+ * live in Supabase `stock_alerts_log` keyed by (retailer, product_id) so a
+ * single flip fires each channel exactly once and never re-alerts.
+ *
+ * Runs the pass TWICE per invocation (immediate + after a 30s sleep) so a
+ * 1x/minute Vercel cron trigger still delivers ~30s effective detection
+ * latency — Vercel has no sub-1-minute cron tier; this is the in-function
+ * workaround, documented above maxDuration.
+ */
+export async function GET() {
+  const pass1 = await runOnce();
+  await sleep(30_000);
+  const pass2 = await runOnce();
+  const hasError = Boolean((pass1 as { error?: string }).error || (pass2 as { error?: string }).error);
+  return NextResponse.json({ pass1, pass2 }, hasError ? { status: 502 } : undefined);
 }
