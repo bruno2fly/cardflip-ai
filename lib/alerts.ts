@@ -142,9 +142,7 @@ async function sendSms(flips: StockFlip[]): Promise<boolean> {
 // Discord webhook
 // ------------------------------------------------------------------
 
-async function sendDiscord(flips: StockFlip[]): Promise<boolean> {
-  const webhook = process.env.DISCORD_ALERT_WEBHOOK_URL;
-  if (!webhook) return false;
+async function postDiscordWebhook(webhook: string, flips: StockFlip[]): Promise<boolean> {
   try {
     const embeds = flips.slice(0, 10).map(f => ({
       title: `${f.name} — IN STOCK at ${retailerLabel(f.retailer)}`,
@@ -163,6 +161,25 @@ async function sendDiscord(flips: StockFlip[]): Promise<boolean> {
     });
     return res.ok;
   } catch { return false; }
+}
+
+/**
+ * Fans out to every configured Discord webhook, not just one — currently
+ * DISCORD_ALERT_WEBHOOK_URL (Boss/Bruno's #cardflip-ai) and
+ * DISCORD_ALERT_WEBHOOK_URL_JASON (Jason's own private drop-alerts server).
+ * Add more DISCORD_ALERT_WEBHOOK_URL_* env vars here as new recipients need
+ * their own channel — each is independent, one failing never blocks another.
+ */
+async function sendDiscord(flips: StockFlip[]): Promise<boolean> {
+  const webhooks = [
+    process.env.DISCORD_ALERT_WEBHOOK_URL,
+    process.env.DISCORD_ALERT_WEBHOOK_URL_JASON,
+  ].filter((url): url is string => Boolean(url));
+  if (webhooks.length === 0) return false;
+  const results = await Promise.all(webhooks.map(url => postDiscordWebhook(url, flips)));
+  // "attempted and at least one succeeded" — matches this module's existing
+  // fail-soft convention (never throws, never blocks other channels).
+  return results.some(Boolean);
 }
 
 /**
