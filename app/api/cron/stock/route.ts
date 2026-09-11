@@ -8,11 +8,15 @@ import { getWatchlist } from "@/lib/watchlist";
 
 export const dynamic = "force-dynamic";
 // Cron fires at most once/minute on Vercel (Pro min interval; Hobby is daily-
-// only). To get ~30s effective detection latency during a hot drop window
-// without a second cron entry, one invocation runs the full check pass
-// TWICE: once immediately, then again after an in-function 30s sleep.
-// maxDuration must cover both passes + the sleep.
-export const maxDuration = 60;
+// only) — see vercel.json ("* * * * *"). An earlier version of this file
+// tried to squeeze out ~30s effective latency by running the full check
+// TWICE per invocation (immediate + after a 30s in-function sleep). That
+// pushed real invocations past 60s and Vercel started returning 504s —
+// confirmed live via `vercel logs` during tonight's drop window, so it was
+// reverted same night. ONE pass per invocation, 1x/minute cadence. Do not
+// reintroduce the double-pass/sleep pattern without confirming a single
+// pass's real p95 duration in production logs first.
+export const maxDuration = 30;
 
 // Cap on how many Target TCINs are fetched per stock-cron run. The Target
 // watchlist can now hold up to hundreds of products (via the Target catalog),
@@ -22,16 +26,11 @@ export const maxDuration = 60;
 // still covered within ceil(N/cap) runs. Tune with TARGET_MAX_CHECKS_PER_RUN.
 const TARGET_MAX_CHECKS_PER_RUN = Number(process.env.TARGET_MAX_CHECKS_PER_RUN) || 40;
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 type PassResult = Record<string, unknown>;
 
 /**
  * One full stock-check pass: Best Buy + Target + nowInStock, flip detection
- * against Supabase, alert fan-out. Extracted so GET() can run it twice per
- * invocation (see maxDuration comment above) for ~30s effective cadence.
+ * against Supabase, alert fan-out.
  */
 async function runOnce(): Promise<PassResult> {
   try {
@@ -167,16 +166,9 @@ async function runOnce(): Promise<PassResult> {
  * in-stock, per retailer, across email + SMS + Discord. State transitions
  * live in Supabase `stock_alerts_log` keyed by (retailer, product_id) so a
  * single flip fires each channel exactly once and never re-alerts.
- *
- * Runs the pass TWICE per invocation (immediate + after a 30s sleep) so a
- * 1x/minute Vercel cron trigger still delivers ~30s effective detection
- * latency — Vercel has no sub-1-minute cron tier; this is the in-function
- * workaround, documented above maxDuration.
  */
 export async function GET() {
-  const pass1 = await runOnce();
-  await sleep(30_000);
-  const pass2 = await runOnce();
-  const hasError = Boolean((pass1 as { error?: string }).error || (pass2 as { error?: string }).error);
-  return NextResponse.json({ pass1, pass2 }, hasError ? { status: 502 } : undefined);
+  const result = await runOnce();
+  const hasError = Boolean((result as { error?: string }).error);
+  return NextResponse.json(result, hasError ? { status: 502 } : undefined);
 }
