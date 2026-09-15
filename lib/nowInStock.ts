@@ -103,6 +103,8 @@ function normalize(value: string): string {
   return value.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
+const TYPE_PHRASES = ["elite trainer box", "booster bundle", "booster box", "premium collection", "booster pack"];
+
 export function matchToProduct(rawName: string, catalog: { id: string; name: string }[]): string | null {
   const raw = normalize(rawName);
   let best: { id: string; score: number } | null = null;
@@ -113,10 +115,28 @@ export function matchToProduct(rawName: string, catalog: { id: string; name: str
     if (words.length === 0) continue;
     const present = words.filter(word => raw.includes(word)).length;
     const score = present / words.length;
-    const type = ["elite trainer box", "booster bundle", "booster box", "premium collection", "booster pack"]
-      .find(phrase => normalizedName.includes(phrase));
+    const type = TYPE_PHRASES.find(phrase => normalizedName.includes(phrase));
     const typeMatches = !type || raw.includes(type);
-    if (typeMatches && score >= 0.7 && present >= 2 && (!best || score > best.score)) best = { id: product.id, score };
+
+    // Words that identify THIS product specifically — i.e. everything left
+    // after stripping the generic type phrase ("elite trainer box" etc).
+    // Live bug (Sep 15, 2026): a NowInStock listing for "Pitch Black Elite
+    // Trainer Box" (Amazon, $82.99) wrongly matched "Pokemon 151 Elite
+    // Trainer Box" and fired a restock alert linking to the wrong product —
+    // the old scoring only checked overall word overlap (0.75 ≥ 0.7), and
+    // "elite/trainer/box" alone was enough even though "151" never matched.
+    // Requiring every identifying word to be present (not just the overall
+    // score) closes that hole: a listing can only match a product if its
+    // distinguishing set/edition name is actually in the raw listing name,
+    // not just the shared generic product-type words.
+    const identifyingWords = (type ? normalizedName.replace(type, "") : normalizedName)
+      .split(" ")
+      .filter(word => word.length > 2 && !STOP_WORDS.has(word));
+    const identifyingWordsPresent = identifyingWords.length === 0 || identifyingWords.every(word => raw.includes(word));
+
+    if (typeMatches && identifyingWordsPresent && score >= 0.7 && present >= 2 && (!best || score > best.score)) {
+      best = { id: product.id, score };
+    }
   }
 
   if (!best) console.warn(`[nowInStock] No catalog match above threshold for: ${rawName}`);
