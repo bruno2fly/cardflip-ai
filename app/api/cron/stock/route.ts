@@ -29,6 +29,23 @@ const TARGET_MAX_CHECKS_PER_RUN = Number(process.env.TARGET_MAX_CHECKS_PER_RUN) 
 type PassResult = Record<string, unknown>;
 
 /**
+ * Race a branch against a hard deadline so ONE slow/stuck retailer check can
+ * never blow the whole cron invocation past Vercel's 30s maxDuration — it
+ * just degrades to an empty result for that branch this run, same failure
+ * mode as a bot-wall block. This is the real fix for the live 504 incident
+ * (Sep 16, 2026 ~2:54am-3:1Xam ET): tuning individual branch timeouts/batch
+ * sizes only shifts the risk around; a hard per-branch ceiling here is what
+ * actually guarantees the invocation returns in time regardless of any one
+ * retailer being slow tonight.
+ */
+function withDeadline<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+/**
  * One full stock-check pass: Best Buy + Target + nowInStock, flip detection
  * against Supabase, alert fan-out.
  */
@@ -44,18 +61,17 @@ async function runOnce(): Promise<PassResult> {
     // alerts are down, cut Walmart out of the hot path right now to restore
     // the known-good Best Buy + Target + NowInStock pipeline immediately.
     // Re-enable once the real bottleneck is isolated with the pressure off.
-    const WALMART_ENABLED_IN_CRON = false;
+    // Walmart re-enabled now that every branch is deadline-guarded below.
+    const DEADLINE_MS = 20_000; // leaves headroom under the 30s maxDuration for flip-detection + Supabase writes after
     const [bestbuy, target, walmart, nowInStock] = await Promise.all([
-      getBestBuyStock(list, true),
+      withDeadline(getBestBuyStock(list, true), DEADLINE_MS, { configured: false as const, checkedAt: Date.now(), statuses: [] }),
       // Round-robin the Target checks so a large monitored set stays polite.
-      getTargetStock(list, true, {
+      withDeadline(getTargetStock(list, true, {
         maxPerRun: TARGET_MAX_CHECKS_PER_RUN,
         intervalMs: STOCK_CHECK_INTERVAL_MINUTES * 60_000,
-      }),
-      WALMART_ENABLED_IN_CRON
-        ? getWalmartStock(list, true)
-        : Promise.resolve({ configured: true as const, checkedAt: Date.now(), statuses: [] }),
-      fetchNowInStockListings(true),
+      }), DEADLINE_MS, { configured: true as const, checkedAt: Date.now(), statuses: [] }),
+      withDeadline(getWalmartStock(list, true), DEADLINE_MS, { configured: true as const, checkedAt: Date.now(), statuses: [] }),
+      withDeadline(fetchNowInStockListings(true), DEADLINE_MS, []),
     ]);
 
     const rawChecks: (ProductStock & { retailer: Retailer; source: "direct" | "nowinstock" })[] = [
