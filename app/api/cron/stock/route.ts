@@ -38,6 +38,13 @@ async function runOnce(): Promise<PassResult> {
     const catalogList = PRODUCTS.map(p => ({ id: p.id, name: p.name, tcin: p.targetTcin, walmartItemId: p.walmartItemId }));
     const watchlistList = watchlist.map(p => ({ id: p.id, name: p.productName, tcin: p.targetTcin ?? undefined, walmartItemId: undefined as number | undefined }));
     const list = [...catalogList, ...watchlistList];
+    // TEMP DISABLED (Sep 16, 2026 3:03am ET, live during the actual drop
+    // window): even after parallelizing Walmart's own checks, the cron kept
+    // 504-timing-out. Rather than keep guessing under time pressure while
+    // alerts are down, cut Walmart out of the hot path right now to restore
+    // the known-good Best Buy + Target + NowInStock pipeline immediately.
+    // Re-enable once the real bottleneck is isolated with the pressure off.
+    const WALMART_ENABLED_IN_CRON = false;
     const [bestbuy, target, walmart, nowInStock] = await Promise.all([
       getBestBuyStock(list, true),
       // Round-robin the Target checks so a large monitored set stays polite.
@@ -45,10 +52,9 @@ async function runOnce(): Promise<PassResult> {
         maxPerRun: TARGET_MAX_CHECKS_PER_RUN,
         intervalMs: STOCK_CHECK_INTERVAL_MINUTES * 60_000,
       }),
-      // Walmart's product page isn't cloud-IP-walled (confirmed live Sep 15,
-      // 2026) so every pinned item is checked directly every run — no
-      // round-robin needed; the pinned set is small (30th Celebration wave).
-      getWalmartStock(list, true),
+      WALMART_ENABLED_IN_CRON
+        ? getWalmartStock(list, true)
+        : Promise.resolve({ configured: true as const, checkedAt: Date.now(), statuses: [] }),
       fetchNowInStockListings(true),
     ]);
 
