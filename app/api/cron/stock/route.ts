@@ -26,6 +26,18 @@ export const maxDuration = 30;
 // still covered within ceil(N/cap) runs. Tune with TARGET_MAX_CHECKS_PER_RUN.
 const TARGET_MAX_CHECKS_PER_RUN = Number(process.env.TARGET_MAX_CHECKS_PER_RUN) || 40;
 
+// FOCUS MODE (Bruno, Sep 16 2026 ~5:13am ET, live drop day): only monitor
+// 30th Celebration products today so every cron run checks the FULL focused
+// set (no round-robin dilution against the other ~600+ catalog/watchlist
+// products competing for the same TARGET_MAX_CHECKS_PER_RUN slots) — maximum
+// freshness on the items that actually matter today. Toggle off by setting
+// Vercel env FOCUS_30TH_ONLY=false (defaults to ON). Safe to remove/revert
+// once today's drop settles down.
+const FOCUS_30TH_ONLY = process.env.FOCUS_30TH_ONLY !== "false";
+function isThirtyth(name: string): boolean {
+  return /30th/i.test(name);
+}
+
 type PassResult = Record<string, unknown>;
 
 /**
@@ -52,8 +64,12 @@ function withDeadline<T>(promise: Promise<T>, ms: number, fallback: T): Promise<
 async function runOnce(): Promise<PassResult> {
   try {
     const watchlist = await getWatchlist();
-    const catalogList = PRODUCTS.map(p => ({ id: p.id, name: p.name, tcin: p.targetTcin, walmartItemId: p.walmartItemId }));
-    const watchlistList = watchlist.map(p => ({ id: p.id, name: p.productName, tcin: p.targetTcin ?? undefined, walmartItemId: undefined as number | undefined }));
+    let catalogList = PRODUCTS.map(p => ({ id: p.id, name: p.name, tcin: p.targetTcin, walmartItemId: p.walmartItemId }));
+    let watchlistList = watchlist.map(p => ({ id: p.id, name: p.productName, tcin: p.targetTcin ?? undefined, walmartItemId: undefined as number | undefined }));
+    if (FOCUS_30TH_ONLY) {
+      catalogList = catalogList.filter(p => isThirtyth(p.name));
+      watchlistList = watchlistList.filter(p => isThirtyth(p.name));
+    }
     const list = [...catalogList, ...watchlistList];
     // TEMP DISABLED (Sep 16, 2026 3:03am ET, live during the actual drop
     // window): even after parallelizing Walmart's own checks, the cron kept
