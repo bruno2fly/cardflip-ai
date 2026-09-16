@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PRODUCTS } from "@/lib/products";
-import { getBestBuyStock, getTargetStock, ProductStock } from "@/lib/stock";
+import { getBestBuyStock, getTargetStock, getWalmartStock, ProductStock } from "@/lib/stock";
 import { sendStockAlerts, StockFlip, Retailer, STOCK_CHECK_INTERVAL_MINUTES } from "@/lib/alerts";
 import { supabase } from "@/lib/supabase";
 import { fetchNowInStockListings, matchToProduct } from "@/lib/nowInStock";
@@ -35,22 +35,27 @@ type PassResult = Record<string, unknown>;
 async function runOnce(): Promise<PassResult> {
   try {
     const watchlist = await getWatchlist();
-    const catalogList = PRODUCTS.map(p => ({ id: p.id, name: p.name, tcin: p.targetTcin }));
-    const watchlistList = watchlist.map(p => ({ id: p.id, name: p.productName, tcin: p.targetTcin ?? undefined }));
+    const catalogList = PRODUCTS.map(p => ({ id: p.id, name: p.name, tcin: p.targetTcin, walmartItemId: p.walmartItemId }));
+    const watchlistList = watchlist.map(p => ({ id: p.id, name: p.productName, tcin: p.targetTcin ?? undefined, walmartItemId: undefined as number | undefined }));
     const list = [...catalogList, ...watchlistList];
-    const [bestbuy, target, nowInStock] = await Promise.all([
+    const [bestbuy, target, walmart, nowInStock] = await Promise.all([
       getBestBuyStock(list, true),
       // Round-robin the Target checks so a large monitored set stays polite.
       getTargetStock(list, true, {
         maxPerRun: TARGET_MAX_CHECKS_PER_RUN,
         intervalMs: STOCK_CHECK_INTERVAL_MINUTES * 60_000,
       }),
+      // Walmart's product page isn't cloud-IP-walled (confirmed live Sep 15,
+      // 2026) so every pinned item is checked directly every run — no
+      // round-robin needed; the pinned set is small (30th Celebration wave).
+      getWalmartStock(list, true),
       fetchNowInStockListings(true),
     ]);
 
     const rawChecks: (ProductStock & { retailer: Retailer; source: "direct" | "nowinstock" })[] = [
       ...(bestbuy.configured ? bestbuy.statuses.map(s => ({ ...s, retailer: "bestbuy", source: "direct" as const })) : []),
       ...target.statuses.map(s => ({ ...s, retailer: "target", source: "direct" as const })),
+      ...walmart.statuses.map(s => ({ ...s, retailer: "walmart", source: "direct" as const })),
       ...nowInStock.flatMap(listing => {
         // Match each collection independently. If a user intentionally adds a
         // curated product to the watchlist, its UUID still gets an independent
@@ -140,6 +145,7 @@ async function runOnce(): Promise<PassResult> {
 
     return {
       bestbuyConfigured: bestbuy.configured,
+      walmartMonitored: walmart.statuses.filter(s => s.sku !== null).length,
       watchlistProducts: watchlist.length,
       nowInStockListings: nowInStock.length,
       checked: checks.length,

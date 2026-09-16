@@ -110,6 +110,32 @@ export async function getTargetStock(
 }
 
 // ------------------------------------------------------------------
+// Walmart — direct product-page monitoring (see lib/walmartStock.ts).
+// Unlike Target, Walmart's product page is NOT cloud-IP-walled, so every
+// pinned item is checked directly every run, no round-robin needed.
+// ------------------------------------------------------------------
+
+let walmartCache: StockResult | null = null;
+
+export async function getWalmartStock(
+  products: { id: string; name: string; walmartItemId?: number }[],
+  force = false
+): Promise<StockResult> {
+  if (!force && walmartCache && Date.now() - walmartCache.checkedAt < CACHE_TTL_MS) return walmartCache;
+
+  const { getWalmartStock: getWalmartStockDirect } = await import("@/lib/walmartStock");
+  const { statuses, monitored, blocked } = await getWalmartStockDirect(
+    products.map(p => ({ id: p.id, walmartItemId: p.walmartItemId }))
+  );
+  if (monitored > 0 && blocked === monitored) {
+    console.warn(`[stock] Walmart: all ${monitored} monitored products hit the bot-wall this run — all degraded to unknown`);
+  }
+
+  walmartCache = { configured: true, checkedAt: Date.now(), statuses };
+  return walmartCache;
+}
+
+// ------------------------------------------------------------------
 // Best Buy (official API)
 // ------------------------------------------------------------------
 
