@@ -24,7 +24,17 @@
 
 import type { StockState, ProductStock } from "@/lib/stock";
 
-const TIMEOUT_MS = 9000;
+// LIVE INCIDENT (Sep 16, 2026, ~2:54am-3:1Xam ET): /api/cron/stock 504-timed
+// out on EVERY run right through the actual 30th Celebration drop window.
+// Root cause: with the default 40-per-run cap, this checker was ALREADY
+// marginal (40 sequential fetches x up to 9s timeout + 400ms gap each can
+// exceed the cron's 30s maxDuration on its own if even a few requests are
+// slow) — and real drop-night traffic on Target's side pushed individual
+// requests slower/more often into the wall, tipping it over. Cutting the
+// per-check timeout and relying on TARGET_MAX_CHECKS_PER_RUN (set lower via
+// Vercel env, see route.ts comment) to keep worst-case run time inside
+// budget.
+const TIMEOUT_MS = 5000;
 const REQUEST_GAP_MS = 400;
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 
