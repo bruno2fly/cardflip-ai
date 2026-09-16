@@ -19,6 +19,16 @@
 
 export type DropConfidence = "confirmed" | "expected" | "rumored";
 
+// A product referenced by an event that ISN'T in the Target catalog (no TCIN
+// to resolve/track) — e.g. a Walmart-only drawing/raffle item. Shown as plain
+// info with a direct link, no "Track" button (there's nothing to watchlist
+// against, since our stock cron only checks Target TCINs / Walmart item IDs).
+export type ExternalDropProduct = {
+  name: string;
+  price: number | null;
+  url?: string;   // direct product/drawing-entry link if known
+};
+
 export type DropEvent = {
   id: string;
   title: string;          // "30th Celebration — Target retail drop"
@@ -28,11 +38,33 @@ export type DropEvent = {
   confidence: DropConfidence;
   note: string;           // what's happening / how to play it
   sourceUrl?: string;     // where the intel came from
-  tcins: number[];        // the products to get ready for
+  tcins: number[];        // the products to get ready for (Target catalog, trackable)
+  externalProducts?: ExternalDropProduct[]; // non-Target products, info-only (see type above)
   graceHours?: number;    // keep showing this long after dropsAt (default 24)
 };
 
 export const DROP_EVENTS: DropEvent[] = [
+  {
+    id: "30th-celebration-walmart-drawing",
+    title: "30th Celebration — Walmart Collectibles Drawing",
+    retailer: "Walmart",
+    // Drawing opens Sep 16, 2026, 2:00pm PDT = 5:00pm ET. Entry window runs
+    // ~2 hours per Bruno's research (Polygon / Thornberry Media, Sep 14-15,
+    // 2026 coverage of Walmart's Collectibles Draw page).
+    dropsAt: "2026-09-16T17:00:00-04:00",
+    window: "Entries open 5:00 PM ET · drawing runs ~2 hours",
+    confidence: "confirmed",
+    note:
+      "Walmart is running its Collectibles Draw (a raffle, not a straight buy-now) for four 30th Celebration items. Enter at the drawing page below during the window — no Target TCIN to track here since it's a Walmart-run raffle, not a normal in-stock flip.",
+    sourceUrl: "https://www.walmart.com/shop/collectibles/draw",
+    tcins: [],
+    externalProducts: [
+      { name: "30th Celebration Elite Trainer Box (2-pack drawing)", price: 139.94, url: "https://www.walmart.com/shop/collectibles/draw" },
+      { name: "30th Celebration Sylveon ex + Greninja ex Box bundle", price: 69.49, url: "https://www.walmart.com/shop/collectibles/draw" },
+      { name: "30th Celebration Poster Collection (6-pack drawing)", price: 119.82, url: "https://www.walmart.com/shop/collectibles/draw" },
+      { name: "30th Celebration Tech Sticker Collection (12-count drawing)", price: 239.64, url: "https://www.walmart.com/shop/collectibles/draw" },
+    ],
+  },
   {
     id: "30th-celebration-target",
     title: "30th Celebration — Target retail drop",

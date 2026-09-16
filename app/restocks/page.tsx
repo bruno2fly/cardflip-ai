@@ -42,6 +42,15 @@ type DropProduct = {
   tracked: boolean;
 };
 
+// Non-Target products (e.g. a Walmart drawing/raffle item) — info-only, no
+// TCIN to track since our stock cron only watches Target TCINs / Walmart
+// item IDs, not raffle entries.
+type ExternalDropProduct = {
+  name: string;
+  msrp: number | null;
+  url: string | null;
+};
+
 type DropEvent = {
   id: string;
   title: string;
@@ -52,6 +61,7 @@ type DropEvent = {
   note: string;
   sourceUrl: string | null;
   products: DropProduct[];
+  externalProducts: ExternalDropProduct[];
 };
 
 type DropWindow = {
@@ -136,6 +146,34 @@ function fmtDate(d: string): string {
   const t = new Date(d.includes("/") ? d.replace(/\//g, "-") : d);
   if (Number.isNaN(t.getTime())) return d;
   return t.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+/* --------------------------------------------------- external product card */
+
+function ExternalProductCard({ product }: { product: ExternalDropProduct }) {
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="text-[10px] uppercase tracking-wide text-gray-600 mb-1">🛒 Walmart · drawing entry</div>
+        <h4 className="text-sm font-semibold text-white leading-snug">{product.name}</h4>
+      </div>
+      <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2">
+        <div className="text-[10px] uppercase tracking-wide text-gray-600">Price</div>
+        <div className="text-white font-bold text-base">{product.msrp == null ? "—" : `$${product.msrp.toFixed(2)}`}</div>
+      </div>
+      {product.url && (
+        <a
+          href={product.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3 py-2.5 rounded-lg transition-colors"
+        >
+          <ShoppingCart size={13} /> Enter drawing <ExternalLink size={12} />
+        </a>
+      )}
+      <div className="text-[10px] text-gray-600 leading-relaxed">Walmart-run raffle, not a normal buy-now flip — no TCIN to track here.</div>
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------ get-ready card */
@@ -368,6 +406,9 @@ export default function DropsHubPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
                     {event.products.map(p => (
                       <ProductCard key={p.tcin} product={p} onTrack={trackOne} busy={trackingTcin === p.tcin || trackingAll === event.id} />
+                    ))}
+                    {event.externalProducts.map((p, i) => (
+                      <ExternalProductCard key={`ext-${event.id}-${i}`} product={p} />
                     ))}
                   </div>
                 </div>

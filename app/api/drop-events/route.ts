@@ -51,6 +51,11 @@ export async function GET() {
         tracked: tracked.has(tcin),
       };
     }),
+    externalProducts: (event.externalProducts ?? []).map(p => ({
+      name: p.name,
+      msrp: p.price,
+      url: p.url ?? event.sourceUrl ?? null,
+    })),
   }));
 
   return NextResponse.json({ generatedAt: new Date().toISOString(), events: out });
