@@ -18,7 +18,6 @@
 import type { StockState, ProductStock } from "@/lib/stock";
 
 const TIMEOUT_MS = 9000;
-const REQUEST_GAP_MS = 400;
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 
 export type WalmartPageState = StockState | "blocked";
@@ -102,28 +101,32 @@ export type WalmartStockResult = {
 /**
  * Check Walmart availability for the given products via their direct product
  * pages. Only products with a pinned `walmartItemId` are monitored; the rest
- * pass through as "unknown". Sequential with a small gap — gentle, human-
- * paced, same convention as Target checks.
+ * pass through as "unknown".
+ *
+ * LIVE INCIDENT (Sep 16, 2026, ~2:54am–3:08am ET): the stock cron (30s
+ * maxDuration) started 504-timing-out on EVERY run right through the actual
+ * 30th Celebration drop window. Root cause: this function originally ran
+ * sequentially with a REQUEST_GAP_MS pause between each of the 7 pinned
+ * items, on top of Best Buy + Target's own round-robin sequential checks +
+ * NowInStock — combined, that pushed a single cron invocation past 30s.
+ * Fix: Walmart's product page is NOT bot-walled (confirmed live when this
+ * was built), so unlike Target there is no politeness reason to serialize a
+ * small, fixed 7-item list — run them concurrently with Promise.all instead.
+ * This is the SAME class of bug the maxDuration comment in the cron route
+ * already warns about (never add sequential latency without checking total
+ * run time against the 30s budget first).
  */
 export async function getWalmartStock(
   products: { id: string; walmartItemId?: number }[]
 ): Promise<WalmartStockResult> {
-  const statuses: ProductStock[] = [];
-  let blocked = 0;
-
   const withId = products.filter((p): p is { id: string; walmartItemId: number } => Boolean(p.walmartItemId));
   const withoutId = products.filter(p => !p.walmartItemId);
 
-  for (const p of withoutId) {
-    statuses.push({ productId: p.id, status: "unknown", sku: null, url: null, price: null });
-  }
+  const unknownStatuses: ProductStock[] = withoutId.map(p => ({ productId: p.id, status: "unknown", sku: null, url: null, price: null }));
 
-  for (const p of withId) {
-    const r = await checkOne(p.id, p.walmartItemId);
-    if (r.blocked) blocked++;
-    statuses.push({ productId: r.productId, status: r.status, sku: r.sku, url: r.url, price: r.price });
-    await new Promise(res => setTimeout(res, REQUEST_GAP_MS));
-  }
+  const results = await Promise.all(withId.map(p => checkOne(p.id, p.walmartItemId)));
+  const blocked = results.filter(r => r.blocked).length;
+  const checkedStatuses: ProductStock[] = results.map(r => ({ productId: r.productId, status: r.status, sku: r.sku, url: r.url, price: r.price }));
 
-  return { configured: true, checkedAt: Date.now(), statuses, monitored: withId.length, blocked };
+  return { configured: true, checkedAt: Date.now(), statuses: [...unknownStatuses, ...checkedStatuses], monitored: withId.length, blocked };
 }
