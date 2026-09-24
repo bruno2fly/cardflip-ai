@@ -44,6 +44,7 @@ create table if not exists public.bot_config (
   agent_version   text,                            -- DropBot version string
   agent_machine   text,                            -- e.g. "bruno’s Mac mini (Mac mini M4)"
   agent_profile_ready boolean not null default false,  -- encrypted checkout profile present on the mini
+  drop_windows    jsonb not null default '[]'::jsonb,   -- [{start,end,interval_sec}] local-time fast-poll windows
   updated_at      timestamptz not null default now()
 );
 
@@ -51,6 +52,8 @@ create table if not exists public.bot_config (
 -- new heartbeat column available without a full teardown:
 alter table public.bot_config
   add column if not exists agent_profile_ready boolean not null default false;
+alter table public.bot_config
+  add column if not exists drop_windows jsonb not null default '[]'::jsonb;
 
 insert into public.bot_config (id) values (1) on conflict (id) do nothing;
 

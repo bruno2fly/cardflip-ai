@@ -27,6 +27,7 @@ import {
   ShieldOff,
   ExternalLink,
   Zap,
+  CalendarPlus,
 } from "lucide-react";
 
 type BotConfig = {
@@ -52,9 +53,12 @@ type BotOrder = {
 
 type Target = { tcin: string; name: string; msrp: number | null; autoBuy: boolean };
 
+type DropWindow = { start: string; end: string; intervalSec: number };
+
 type Snapshot = {
-  config: BotConfig | null;
+  config: (BotConfig & { dropWindows?: DropWindow[] }) | null;
   agentOnline: boolean;
+  activeWindow: DropWindow | null;
   orders: BotOrder[];
   targets: Target[];
   targetsWarning: string | null;
@@ -83,6 +87,10 @@ export default function BotPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [busyTcin, setBusyTcin] = useState<string | null>(null);
   const [arming, setArming] = useState(false);
+  const [winStart, setWinStart] = useState("");
+  const [winEnd, setWinEnd] = useState("");
+  const [winInterval, setWinInterval] = useState(15);
+  const [winBusy, setWinBusy] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -148,6 +156,40 @@ export default function BotPage() {
     } finally {
       setBusyTcin(null);
     }
+  }
+
+  async function saveWindows(windows: DropWindow[]) {
+    setWinBusy(true);
+    try {
+      const res = await fetch("/api/bot/drop-windows", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ windows }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save drop windows");
+    } finally {
+      setWinBusy(false);
+    }
+  }
+
+  function addWindow() {
+    if (!winStart || !winEnd) {
+      setError("Pick both a start and end time for the drop window");
+      return;
+    }
+    const windows = [...(snap?.config?.dropWindows ?? []), { start: winStart, end: winEnd, intervalSec: winInterval }];
+    saveWindows(windows);
+    setWinStart("");
+    setWinEnd("");
+  }
+
+  function removeWindow(i: number) {
+    const windows = (snap?.config?.dropWindows ?? []).filter((_, idx) => idx !== i);
+    saveWindows(windows);
   }
 
   async function buyNow(t: Target) {
@@ -250,6 +292,94 @@ export default function BotPage() {
               <div className="text-lg font-bold text-red-400">{stats.failed}</div>
               <div className="text-[10px] text-gray-500">failed</div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* drop windows */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-500">Drop Windows</h2>
+        {snap?.activeWindow && (
+          <div className="bg-green-950/40 border border-green-800/50 rounded-xl px-4 py-3 text-green-300 text-sm flex items-center gap-2">
+            <Zap size={14} className="animate-pulse" />
+            <span>
+              FAST POLLING NOW — every {snap.activeWindow.intervalSec}s until{" "}
+              {new Date(snap.activeWindow.end).toLocaleTimeString()} (window {new Date(snap.activeWindow.start).toLocaleTimeString()} → {new Date(snap.activeWindow.end).toLocaleTimeString()})
+            </span>
+          </div>
+        )}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800/70">
+          {(snap?.config?.dropWindows ?? []).length === 0 && (
+            <div className="px-4 py-3 text-gray-500 text-sm">
+              No windows scheduled. Standard cadence (~75–105s) runs around the clock; schedule a window for a known drop and the bot tightens to fast polling inside it.
+            </div>
+          )}
+          {(snap?.config?.dropWindows ?? []).map((w, i) => {
+            const past = new Date(w.end).getTime() < Date.now();
+            const live = snap?.activeWindow && w.start === snap.activeWindow.start;
+            return (
+              <div key={`${w.start}-${i}`} className="flex items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-white text-sm font-medium">
+                    {new Date(w.start).toLocaleString()} → {new Date(w.end).toLocaleTimeString()}
+                  </div>
+                  <div className="text-[11px] mt-0.5">
+                    {live ? (
+                      <span className="text-green-400">⚡ fast polling every {w.intervalSec}s — active</span>
+                    ) : past ? (
+                      <span className="text-gray-600">past</span>
+                    ) : (
+                      <span className="text-gray-500">fast poll every {w.intervalSec}s when it opens</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => removeWindow(i)}
+                  className="flex-shrink-0 text-xs font-semibold text-red-400 hover:text-red-300 px-2 py-1 rounded"
+                >
+                  Remove
+                </button>
+              </div>
+            );
+          })}
+          <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-t border-gray-800/70">
+            <label className="text-[11px] text-gray-500">
+              from
+              <input
+                type="datetime-local"
+                value={winStart}
+                onChange={e => setWinStart(e.target.value)}
+                className="ml-1 bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-1.5"
+              />
+            </label>
+            <label className="text-[11px] text-gray-500">
+              to
+              <input
+                type="datetime-local"
+                value={winEnd}
+                onChange={e => setWinEnd(e.target.value)}
+                className="ml-1 bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-1.5"
+              />
+            </label>
+            <label className="text-[11px] text-gray-500">
+              poll every
+              <input
+                type="number"
+                min={5}
+                max={60}
+                value={winInterval}
+                onChange={e => setWinInterval(Number(e.target.value) || 15)}
+                className="ml-1 w-16 bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-1.5"
+              />
+              s
+            </label>
+            <button
+              onClick={addWindow}
+              disabled={winBusy}
+              className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-700 text-gray-300 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+            >
+              {winBusy ? <Loader2 size={13} className="animate-spin" /> : <CalendarPlus size={13} />} Schedule window
+            </button>
           </div>
         </div>
       </div>

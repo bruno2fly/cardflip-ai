@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getBotConfig, listBotOrders, agentIsOnline } from "@/lib/bot";
+import { getBotConfig, listBotOrders, agentIsOnline, activeDropWindow } from "@/lib/bot";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +54,7 @@ export async function GET() {
   return NextResponse.json({
     config,
     agentOnline: agentIsOnline(config),
+    activeWindow: activeDropWindow(config),
     orders: orders ?? [],
     targets,
     targetsWarning,

@@ -108,7 +108,16 @@ export async function POST(req: NextRequest) {
           msrp: row.msrp,
         };
       });
-    return NextResponse.json({ ok: true, armed: cfg?.armed ?? false, targets });
+    // Drop windows: local-time ISO strings; the monitor compares against
+    // its own clock, so times mean the same moment as in the browser that
+    // scheduled them (same timezone).
+    const { data: cfgRow } = await supabase
+      .from("bot_config")
+      .select("drop_windows")
+      .eq("id", 1)
+      .single();
+    const dropWindows = (cfgRow as { drop_windows?: unknown } | null)?.drop_windows ?? [];
+    return NextResponse.json({ ok: true, armed: cfg?.armed ?? false, targets, dropWindows });
   }
 
   // -- claim (oldest queued → running) ---------------------------------------

@@ -26,12 +26,20 @@ export type BotOrder = {
   finishedAt: string | null;
 };
 
+/** One fast-poll window (Stellar-style dynamic delay). Local time, no offset. */
+export type DropWindow = {
+  start: string;
+  end: string;
+  intervalSec: number;
+};
+
 export type BotConfig = {
   armed: boolean;
   agentHeartbeat: string | null;
   agentVersion: string | null;
   agentMachine: string | null;
   agentProfileReady: boolean;
+  dropWindows: DropWindow[];
   updatedAt: string;
 };
 
@@ -111,7 +119,7 @@ export async function getBotConfig(): Promise<BotConfig | null> {
   let data: Record<string, unknown> | null = null;
   const q = await supabase
     .from("bot_config")
-    .select("armed, agent_heartbeat, agent_version, agent_machine, agent_profile_ready, updated_at")
+    .select("armed, agent_heartbeat, agent_version, agent_machine, agent_profile_ready, drop_windows, updated_at")
     .eq("id", 1)
     .single();
   if (q.error) {
@@ -131,14 +139,24 @@ export async function getBotConfig(): Promise<BotConfig | null> {
     agent_version: string | null;
     agent_machine: string | null;
     agent_profile_ready?: boolean | null;
+    drop_windows?: unknown;
     updated_at: string;
   };
+  const windows = Array.isArray(row.drop_windows) ? row.drop_windows : [];
   return {
     armed: row.armed,
     agentHeartbeat: row.agent_heartbeat,
     agentVersion: row.agent_version,
     agentMachine: row.agent_machine,
     agentProfileReady: row.agent_profile_ready ?? false,
+    dropWindows: windows
+      .filter((w): w is Record<string, unknown> => !!w && typeof w === "object")
+      .map((w) => ({
+        start: String(w.start ?? ""),
+        end: String(w.end ?? ""),
+        intervalSec: Number(w.interval_sec ?? 15) || 15,
+      }))
+      .filter((w) => w.start && w.end),
     updatedAt: row.updated_at,
   };
 }
@@ -146,6 +164,28 @@ export async function getBotConfig(): Promise<BotConfig | null> {
 export async function setBotArmed(armed: boolean): Promise<boolean> {
   if (!supabase) return false;
   const { error } = await supabase.from("bot_config").update({ armed }).eq("id", 1);
+  return !error;
+}
+
+/** The drop window covering NOW (server clock, same TZ as the browser). */
+export function activeDropWindow(cfg: BotConfig | null): DropWindow | null {
+  if (!cfg) return null;
+  const now = Date.now();
+  for (const w of cfg.dropWindows) {
+    const s = new Date(w.start).getTime();
+    const e = new Date(w.end).getTime();
+    if (!Number.isNaN(s) && !Number.isNaN(e) && s <= now && now <= e) return w;
+  }
+  return null;
+}
+
+/** Replace the whole drop-window list. Callers validate before calling. */
+export async function setDropWindows(windows: DropWindow[]): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase
+    .from("bot_config")
+    .update({ drop_windows: windows.map((w) => ({ start: w.start, end: w.end, interval_sec: w.intervalSec })) })
+    .eq("id", 1);
   return !error;
 }
 
