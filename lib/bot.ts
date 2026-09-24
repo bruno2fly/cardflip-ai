@@ -31,6 +31,7 @@ export type BotConfig = {
   agentHeartbeat: string | null;
   agentVersion: string | null;
   agentMachine: string | null;
+  agentProfileReady: boolean;
   updatedAt: string;
 };
 
@@ -104,17 +105,32 @@ export async function queueBotOrder(input: {
 
 export async function getBotConfig(): Promise<BotConfig | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase
+  // Full column set first; if the agent_profile_ready column hasn't been
+  // added yet (migration pending), fall back to the base columns so the
+  // page degrades gracefully instead of losing the whole config card.
+  let data: Record<string, unknown> | null = null;
+  const q = await supabase
     .from("bot_config")
-    .select("armed, agent_heartbeat, agent_version, agent_machine, updated_at")
+    .select("armed, agent_heartbeat, agent_version, agent_machine, agent_profile_ready, updated_at")
     .eq("id", 1)
     .single();
-  if (error || !data) return null;
+  if (q.error) {
+    const fb = await supabase
+      .from("bot_config")
+      .select("armed, agent_heartbeat, agent_version, agent_machine, updated_at")
+      .eq("id", 1)
+      .single();
+    data = (fb.data ?? null) as Record<string, unknown> | null;
+  } else {
+    data = (q.data ?? null) as Record<string, unknown> | null;
+  }
+  if (!data) return null;
   const row = data as {
     armed: boolean;
     agent_heartbeat: string | null;
     agent_version: string | null;
     agent_machine: string | null;
+    agent_profile_ready?: boolean | null;
     updated_at: string;
   };
   return {
@@ -122,6 +138,7 @@ export async function getBotConfig(): Promise<BotConfig | null> {
     agentHeartbeat: row.agent_heartbeat,
     agentVersion: row.agent_version,
     agentMachine: row.agent_machine,
+    agentProfileReady: row.agent_profile_ready ?? false,
     updatedAt: row.updated_at,
   };
 }

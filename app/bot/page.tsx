@@ -34,6 +34,7 @@ type BotConfig = {
   agentHeartbeat: string | null;
   agentVersion: string | null;
   agentMachine: string | null;
+  agentProfileReady?: boolean;
 };
 
 type BotOrder = {
@@ -207,6 +208,13 @@ export default function BotPage() {
           </div>
           <div className="text-[11px] text-gray-500 mt-1">
             {snap?.config?.agentMachine ?? "no heartbeat yet"} · {timeAgo(snap?.config?.agentHeartbeat ?? null)}
+          </div>
+          <div className="text-[11px] mt-0.5">
+            {snap?.config?.agentProfileReady ? (
+              <span className="text-green-400">💳 checkout profile ready (encrypted, on-device)</span>
+            ) : (
+              <span className="text-gray-600">💳 no checkout profile on the bot — wallet-only buying</span>
+            )}
           </div>
         </div>
 

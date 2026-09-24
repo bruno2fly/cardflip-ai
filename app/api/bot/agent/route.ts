@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
     const patch: Record<string, unknown> = { agent_heartbeat: new Date().toISOString() };
     if (typeof body.version === "string") patch.agent_version = body.version;
     if (typeof body.machine === "string") patch.agent_machine = body.machine;
+    if (typeof body.profileReady === "boolean") patch.agent_profile_ready = body.profileReady;
     const { error } = await supabase.from("bot_config").update(patch).eq("id", 1);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     const { data: cfg } = await supabase
