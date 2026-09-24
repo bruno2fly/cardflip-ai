@@ -1,0 +1,343 @@
+"use client";
+
+/**
+ * 🤖 Buy Bot — the DropBot control room.
+ *
+ * One page to see and steer the auto-buy system:
+ *   • Agent status    — is the Mac mini alive (heartbeat < 2 min)?
+ *   • Master arm      — the kill switch; off = detection still runs, no buying
+ *   • Auto-buy targets— watchlist items with a Target TCIN, each toggleable
+ *   • Buy now         — queue a manual order; the bot picks it up in ~3s
+ *   • Order feed      — every attempt (auto + manual) with its result
+ *
+ * Architecture: this page is the brain, the Mac mini is the arm. Detection
+ * and checkout run on the mini (Playwright + real Chrome on the home IP,
+ * paid with the card saved in the Target wallet — card data never touches
+ * this platform). Supabase's bot_orders/bot_config tables are the queue
+ * between them.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Bot,
+  RefreshCw,
+  Loader2,
+  ShoppingCart,
+  ShieldCheck,
+  ShieldOff,
+  ExternalLink,
+  Zap,
+} from "lucide-react";
+
+type BotConfig = {
+  armed: boolean;
+  agentHeartbeat: string | null;
+  agentVersion: string | null;
+  agentMachine: string | null;
+};
+
+type BotOrder = {
+  id: string;
+  tcin: string;
+  productName: string;
+  retailer: string;
+  status: "queued" | "running" | "ordered" | "failed" | "cancelled";
+  source: "auto" | "manual";
+  price: number | null;
+  error: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+};
+
+type Target = { tcin: string; name: string; msrp: number | null; autoBuy: boolean };
+
+type Snapshot = {
+  config: BotConfig | null;
+  agentOnline: boolean;
+  orders: BotOrder[];
+  targets: Target[];
+  targetsWarning: string | null;
+};
+
+const STATUS_CHIP: Record<BotOrder["status"], string> = {
+  queued: "bg-yellow-950/60 text-yellow-300 border-yellow-800/60",
+  running: "bg-blue-950/60 text-blue-300 border-blue-800/60",
+  ordered: "bg-green-950/60 text-green-300 border-green-800/60",
+  failed: "bg-red-950/60 text-red-300 border-red-800/60",
+  cancelled: "bg-gray-800 text-gray-400 border-gray-700",
+};
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "never";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+export default function BotPage() {
+  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [busyTcin, setBusyTcin] = useState<string | null>(null);
+  const [arming, setArming] = useState(false);
+
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch("/api/bot", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      setSnap(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load bot state");
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 5000); // live-ish: heartbeat window is 2 min
+    return () => clearInterval(t);
+  }, [load]);
+
+  const stats = useMemo(() => {
+    const orders = snap?.orders ?? [];
+    return {
+      ordered: orders.filter(o => o.status === "ordered").length,
+      queued: orders.filter(o => o.status === "queued" || o.status === "running").length,
+      failed: orders.filter(o => o.status === "failed").length,
+    };
+  }, [snap]);
+
+  async function setArmed(armed: boolean) {
+    setArming(true);
+    try {
+      const res = await fetch("/api/bot/armed", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ armed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to set arm state");
+    } finally {
+      setArming(false);
+    }
+  }
+
+  async function toggleAutoBuy(t: Target) {
+    setBusyTcin(t.tcin);
+    try {
+      const res = await fetch("/api/bot/watchlist-auto", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tcin: t.tcin, autoBuy: !t.autoBuy }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to toggle auto-buy");
+    } finally {
+      setBusyTcin(null);
+    }
+  }
+
+  async function buyNow(t: Target) {
+    setBusyTcin(t.tcin);
+    try {
+      const res = await fetch("/api/bot/orders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tcin: t.tcin, productName: t.name, price: t.msrp }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to queue order");
+    } finally {
+      setBusyTcin(null);
+    }
+  }
+
+  const online = snap?.agentOnline ?? false;
+  const armed = snap?.config?.armed ?? false;
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      {/* header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Bot size={22} className="text-yellow-400" /> Buy Bot
+          </h1>
+          <p className="text-gray-400 text-sm mt-1">
+            The auto-buy arm — detects drops on the Mac mini, checks out with real Chrome, reports back here.
+          </p>
+        </div>
+        <button
+          onClick={load}
+          disabled={refreshing}
+          className="flex-shrink-0 flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-700 text-gray-300 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+        >
+          {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-red-950/40 border border-red-800/50 rounded-xl px-4 py-3 text-red-300 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* status cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Bot Agent</div>
+          <div className={`mt-1.5 flex items-center gap-2 text-sm font-semibold ${online ? "text-green-400" : "text-red-400"}`}>
+            <span className={`inline-block w-2 h-2 rounded-full ${online ? "bg-green-400 animate-pulse" : "bg-red-400"}`} />
+            {online ? "Online" : "Offline"}
+          </div>
+          <div className="text-[11px] text-gray-500 mt-1">
+            {snap?.config?.agentMachine ?? "no heartbeat yet"} · {timeAgo(snap?.config?.agentHeartbeat ?? null)}
+          </div>
+        </div>
+
+        <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Master Arm</div>
+          <button
+            onClick={() => setArmed(!armed)}
+            disabled={arming}
+            className={`mt-1.5 w-full flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg border transition-colors ${
+              armed
+                ? "bg-green-950/60 text-green-300 border-green-800/60 hover:bg-green-900/60"
+                : "bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
+            }`}
+          >
+            {arming ? <Loader2 size={14} className="animate-spin" /> : armed ? <ShieldCheck size={14} /> : <ShieldOff size={14} />}
+            {armed ? "ARMED — auto-buying" : "DISARMED"}
+          </button>
+          <div className="text-[11px] text-gray-500 mt-1">Off = watching only, no purchases</div>
+        </div>
+
+        <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Orders</div>
+          <div className="mt-1.5 grid grid-cols-3 gap-1 text-center">
+            <div>
+              <div className="text-lg font-bold text-green-400">{stats.ordered}</div>
+              <div className="text-[10px] text-gray-500">ordered</div>
+            </div>
+            <div>
+              <div className="text-lg font-bold text-yellow-400">{stats.queued}</div>
+              <div className="text-[10px] text-gray-500">queued</div>
+            </div>
+            <div>
+              <div className="text-lg font-bold text-red-400">{stats.failed}</div>
+              <div className="text-[10px] text-gray-500">failed</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* targets */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-500">Auto-Buy Targets</h2>
+        {snap?.targetsWarning && (
+          <div className="bg-yellow-950/40 border border-yellow-800/50 rounded-xl px-4 py-3 text-yellow-300 text-sm">
+            {snap.targetsWarning}
+          </div>
+        )}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800/70">
+          {(snap?.targets ?? []).length === 0 && (
+            <div className="px-4 py-3 text-gray-500 text-sm">
+              No watchlist items with a Target TCIN yet — add products from the Target Catalog, then toggle auto-buy here.
+            </div>
+          )}
+          {(snap?.targets ?? []).map(t => (
+            <div key={t.tcin} className="flex items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-white text-sm font-medium truncate">{t.name}</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">
+                  TCIN {t.tcin}{t.msrp != null ? ` · MSRP $${Number(t.msrp).toFixed(2)}` : ""}
+                </div>
+              </div>
+              <button
+                onClick={() => buyNow(t)}
+                disabled={busyTcin === t.tcin}
+                title="Queue a manual order — the bot buys this now"
+                className="flex-shrink-0 flex items-center gap-1 bg-yellow-950/60 hover:bg-yellow-900/60 disabled:opacity-50 text-yellow-300 border border-yellow-800/60 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+              >
+                {busyTcin === t.tcin ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />} Buy now
+              </button>
+              <button
+                onClick={() => toggleAutoBuy(t)}
+                disabled={busyTcin === t.tcin}
+                role="switch"
+                aria-checked={t.autoBuy}
+                title={t.autoBuy ? "Bot buys this when it drops" : "Alerts only"}
+                className={`flex-shrink-0 relative w-10 h-[22px] rounded-full transition-colors ${
+                  t.autoBuy ? "bg-green-600" : "bg-gray-700"
+                } ${busyTcin === t.tcin ? "opacity-50" : ""}`}
+              >
+                <span
+                  className={`absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all ${
+                    t.autoBuy ? "left-[21px]" : "left-[3px]"
+                  }`}
+                />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* order feed */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-500">Order Feed</h2>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800/70">
+          {(snap?.orders ?? []).length === 0 && (
+            <div className="px-4 py-3 text-gray-500 text-sm">No orders yet. The bot&apos;s first catch will appear here.</div>
+          )}
+          {(snap?.orders ?? []).map(o => (
+            <div key={o.id} className="flex items-center gap-3 px-4 py-3">
+              <span className={`flex-shrink-0 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${STATUS_CHIP[o.status]}`}>
+                {o.status}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-white text-sm font-medium truncate">
+                  {o.productName || `TCIN ${o.tcin}`}{" "}
+                  {o.price != null && <span className="text-gray-400 font-normal">· ${Number(o.price).toFixed(2)}</span>}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-0.5">
+                  {o.source === "auto" ? "🤖 auto-detected" : "👤 manual"} · {timeAgo(o.createdAt)}
+                  {o.error ? ` · ${o.error}` : ""}
+                </div>
+              </div>
+              <a
+                href={`https://www.target.com/p/-/A-${o.tcin}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex-shrink-0 text-gray-500 hover:text-gray-300"
+                title="Open product page"
+              >
+                <ExternalLink size={13} />
+              </a>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-gray-600 text-[11px] leading-relaxed">
+        <ShoppingCart size={11} className="inline -mt-0.5" /> The bot checks out with your logged-in Target session on the
+        Mac mini and pays with the card saved in your Target wallet — card data never touches this platform. Arm state is
+        re-read by the bot every few seconds, so disarming stops buying almost instantly.
+      </p>
+    </div>
+  );
+}
