@@ -28,7 +28,34 @@ import {
   ExternalLink,
   Zap,
   CalendarPlus,
+  CreditCard,
 } from "lucide-react";
+
+/* ---- zero-knowledge profile encryption (runs entirely in this browser) ----
+ * The card is encrypted with the Mac mini's RSA public key BEFORE it leaves
+ * this page. Supabase only ever stores ciphertext; only the mini can read it.
+ * RSA-OAEP SHA-256, chunked (the JSON is ~500 bytes, one RSA block maxes at
+ * 190), matching openssl pkeyutl on the mini side. */
+async function pemToCryptoKey(pem: string): Promise<CryptoKey> {
+  const b64 = pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const der = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return crypto.subtle.importKey("spki", der, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
+}
+
+async function encryptForMini(pem: string, obj: unknown): Promise<string> {
+  const key = await pemToCryptoKey(pem);
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  const chunks: string[] = [];
+  const CHUNK = 180;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const ct = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, key, bytes.slice(i, i + CHUNK));
+    const arr = new Uint8Array(ct);
+    let bin = "";
+    for (let j = 0; j < arr.length; j++) bin += String.fromCharCode(arr[j]);
+    chunks.push(btoa(bin));
+  }
+  return chunks.join("\n");
+}
 
 type BotConfig = {
   armed: boolean;
@@ -52,6 +79,22 @@ type BotOrder = {
 };
 
 type Target = { tcin: string; name: string; msrp: number | null; autoBuy: boolean };
+
+type ProfileInfo = { pubkey: string | null; masked: string | null; pending: boolean; updatedAt: string | null };
+
+type ProfileForm = {
+  full_name: string; email: string; phone: string;
+  address_line1: string; address_line2: string; city: string; state: string;
+  postal_code: string; country: string;
+  card_number: string; exp_month: string; exp_year: string; cvv: string;
+};
+
+const EMPTY_PROFILE: ProfileForm = {
+  full_name: "", email: "", phone: "",
+  address_line1: "", address_line2: "", city: "", state: "",
+  postal_code: "", country: "US",
+  card_number: "", exp_month: "", exp_year: "", cvv: "",
+};
 
 type DropWindow = { start: string; end: string; intervalSec: number };
 
@@ -91,15 +134,24 @@ export default function BotPage() {
   const [winEnd, setWinEnd] = useState("");
   const [winInterval, setWinInterval] = useState(15);
   const [winBusy, setWinBusy] = useState(false);
+  const [profileInfo, setProfileInfo] = useState<ProfileInfo | null>(null);
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  const [profileForm, setProfileForm] = useState<ProfileForm>(EMPTY_PROFILE);
+  const [profileMsg, setProfileMsg] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const res = await fetch("/api/bot", { cache: "no-store" });
+      const [res, pRes] = await Promise.all([
+        fetch("/api/bot", { cache: "no-store" }),
+        fetch("/api/bot/profile", { cache: "no-store" }),
+      ]);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
       setSnap(data);
       setError(null);
+      if (pRes.ok) setProfileInfo(await pRes.json());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load bot state");
     } finally {
@@ -190,6 +242,38 @@ export default function BotPage() {
   function removeWindow(i: number) {
     const windows = (snap?.config?.dropWindows ?? []).filter((_, idx) => idx !== i);
     saveWindows(windows);
+  }
+
+  async function saveProfile() {
+    const f = profileForm;
+    if (!f.card_number || !f.exp_month || !f.exp_year || !f.cvv || !f.full_name) {
+      setProfileMsg("Name, card number, expiry and CVV are required");
+      return;
+    }
+    if (!profileInfo?.pubkey) {
+      setProfileMsg("The bot hasn't published its key yet — let it run once, then retry");
+      return;
+    }
+    setSavingProfile(true);
+    setProfileMsg(null);
+    try {
+      const ciphertext = await encryptForMini(profileInfo.pubkey, f);
+      const res = await fetch("/api/bot/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ciphertext }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      setProfileForm({ ...EMPTY_PROFILE, country: f.country });
+      setShowProfileForm(false);
+      setProfileMsg("Encrypted and queued — the Mac mini picks it up within a few seconds");
+      await load();
+    } catch (err) {
+      setProfileMsg(err instanceof Error ? err.message : "Failed to encrypt/send profile");
+    } finally {
+      setSavingProfile(false);
+    }
   }
 
   async function buyNow(t: Target) {
@@ -293,6 +377,132 @@ export default function BotPage() {
               <div className="text-[10px] text-gray-500">failed</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* checkout profile */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-500">Checkout Profile</h2>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-white text-sm font-medium">
+                <CreditCard size={14} className="text-yellow-400" />
+                {profileInfo?.masked ? (
+                  <span>{profileInfo.masked}</span>
+                ) : profileInfo?.pending ? (
+                  <span className="text-yellow-300">encrypted profile queued — waiting for the Mac mini to pick it up</span>
+                ) : (
+                  <span className="text-gray-500">no checkout profile on the bot yet</span>
+                )}
+              </div>
+              <div className="text-[11px] text-gray-500 mt-1">
+                Zero-knowledge: this page encrypts your card with the Mac mini&apos;s own key before anything is sent — the platform
+                only ever stores unreadable ciphertext.
+              </div>
+            </div>
+            <button
+              onClick={() => setShowProfileForm(v => !v)}
+              className="flex-shrink-0 flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+            >
+              {showProfileForm ? "Cancel" : "Send profile"}
+            </button>
+          </div>
+          {profileMsg && <div className="mt-2 text-[11px] text-yellow-300">{profileMsg}</div>}
+          {showProfileForm && (
+            <div className="mt-3 border-t border-gray-800/70 pt-3 space-y-2">
+              {!profileInfo?.pubkey && (
+                <div className="text-[11px] text-red-300">
+                  The Mac mini hasn&apos;t published its encryption key yet — start the bot (install + login steps) and refresh.
+                </div>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {([
+                  ["full_name", "Name on card", "text"],
+                  ["email", "Email", "email"],
+                  ["phone", "Phone", "tel"],
+                  ["card_number", "Card number", "text"],
+                ] as const).map(([k, label, type]) => (
+                  <input
+                    key={k}
+                    type={type}
+                    placeholder={label}
+                    value={profileForm[k]}
+                    onChange={e => setProfileForm(f => ({ ...f, [k]: e.target.value }))}
+                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 placeholder-gray-500"
+                  />
+                ))}
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    placeholder="MM"
+                    value={profileForm.exp_month}
+                    onChange={e => setProfileForm(f => ({ ...f, exp_month: e.target.value }))}
+                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 placeholder-gray-500"
+                  />
+                  <input
+                    placeholder="YYYY"
+                    value={profileForm.exp_year}
+                    onChange={e => setProfileForm(f => ({ ...f, exp_year: e.target.value }))}
+                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 placeholder-gray-500"
+                  />
+                  <input
+                    placeholder="CVV"
+                    value={profileForm.cvv}
+                    onChange={e => setProfileForm(f => ({ ...f, cvv: e.target.value }))}
+                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 placeholder-gray-500"
+                  />
+                </div>
+                <input
+                  placeholder="Address line 1"
+                  value={profileForm.address_line1}
+                  onChange={e => setProfileForm(f => ({ ...f, address_line1: e.target.value }))}
+                  className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 placeholder-gray-500"
+                />
+                <input
+                  placeholder="Address line 2"
+                  value={profileForm.address_line2}
+                  onChange={e => setProfileForm(f => ({ ...f, address_line2: e.target.value }))}
+                  className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 placeholder-gray-500"
+                />
+                <input
+                  placeholder="City"
+                  value={profileForm.city}
+                  onChange={e => setProfileForm(f => ({ ...f, city: e.target.value }))}
+                  className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 placeholder-gray-500"
+                />
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    placeholder="State"
+                    value={profileForm.state}
+                    onChange={e => setProfileForm(f => ({ ...f, state: e.target.value }))}
+                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 placeholder-gray-500"
+                  />
+                  <input
+                    placeholder="ZIP"
+                    value={profileForm.postal_code}
+                    onChange={e => setProfileForm(f => ({ ...f, postal_code: e.target.value }))}
+                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 placeholder-gray-500"
+                  />
+                  <input
+                    placeholder="Country"
+                    value={profileForm.country}
+                    onChange={e => setProfileForm(f => ({ ...f, country: e.target.value }))}
+                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 placeholder-gray-500"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={saveProfile}
+                  disabled={savingProfile || !profileInfo?.pubkey}
+                  className="flex items-center gap-1.5 bg-yellow-950/60 hover:bg-yellow-900/60 disabled:opacity-50 text-yellow-300 border border-yellow-800/60 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+                >
+                  {savingProfile ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={13} />} Encrypt and send
+                </button>
+                <span className="text-[10px] text-gray-600">Card data is encrypted in this browser and stays unreadable everywhere except the Mac mini.</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

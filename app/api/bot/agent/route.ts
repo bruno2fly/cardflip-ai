@@ -188,5 +188,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // -- pubkey (the mini publishes its RSA public key once) ----------------------
+  if (action === "pubkey") {
+    const pem = typeof body.pem === "string" && body.pem.includes("BEGIN") ? body.pem.trim() : null;
+    if (!pem) return NextResponse.json({ error: "pem (public key) required" }, { status: 400 });
+    const { data: cur } = await supabase
+      .from("bot_config")
+      .select("profile_pubkey")
+      .eq("id", 1)
+      .single();
+    const changed = (cur as { profile_pubkey?: string | null } | null)?.profile_pubkey !== pem;
+    const patch: Record<string, unknown> = { profile_pubkey: pem };
+    if (changed) {
+      // new key = any pending ciphertext is undecryptable; drop it
+      patch.profile_ciphertext = null;
+    }
+    const { error } = await supabase.from("bot_config").update(patch).eq("id", 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  // -- profile (the mini fetches pending encrypted profile) --------------------
+  if (action === "profile") {
+    const { data } = await supabase
+      .from("bot_config")
+      .select("profile_ciphertext")
+      .eq("id", 1)
+      .single();
+    const ct = (data as { profile_ciphertext?: string | null } | null)?.profile_ciphertext ?? null;
+    return NextResponse.json({ ok: true, ciphertext: ct });
+  }
+
+  // -- profile-consumed (the mini decrypted + stored locally; report masked) ----
+  if (action === "profile-consumed") {
+    const masked = typeof body.masked === "string" ? body.masked.slice(0, 120) : null;
+    if (!masked) return NextResponse.json({ error: "masked required" }, { status: 400 });
+    const { error } = await supabase
+      .from("bot_config")
+      .update({ profile_ciphertext: null, profile_masked: masked, profile_updated_at: new Date().toISOString() })
+      .eq("id", 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ error: `unknown action "${action}"` }, { status: 400 });
 }

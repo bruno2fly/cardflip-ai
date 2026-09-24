@@ -45,6 +45,13 @@ create table if not exists public.bot_config (
   agent_machine   text,                            -- e.g. "bruno’s Mac mini (Mac mini M4)"
   agent_profile_ready boolean not null default false,  -- encrypted checkout profile present on the mini
   drop_windows    jsonb not null default '[]'::jsonb,   -- [{start,end,interval_sec}] local-time fast-poll windows
+  -- zero-knowledge checkout profile (see /bot page): the browser encrypts
+  -- card data with the mini's RSA public key; ONLY ciphertext ever lands
+  -- here. profile_masked is display-only (last4 + name + expiry).
+  profile_pubkey      text,          -- PEM public key published by the mini
+  profile_ciphertext  text,          -- browser-encrypted profile JSON awaiting pickup
+  profile_masked      text,          -- e.g. "Visa 4242 · 12/30 · Bruno" (set by the mini after consuming)
+  profile_updated_at  timestamptz,
   updated_at      timestamptz not null default now()
 );
 
@@ -54,6 +61,14 @@ alter table public.bot_config
   add column if not exists agent_profile_ready boolean not null default false;
 alter table public.bot_config
   add column if not exists drop_windows jsonb not null default '[]'::jsonb;
+alter table public.bot_config
+  add column if not exists profile_pubkey text;
+alter table public.bot_config
+  add column if not exists profile_ciphertext text;
+alter table public.bot_config
+  add column if not exists profile_masked text;
+alter table public.bot_config
+  add column if not exists profile_updated_at timestamptz;
 
 insert into public.bot_config (id) values (1) on conflict (id) do nothing;
 
