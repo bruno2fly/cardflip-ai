@@ -105,6 +105,7 @@ type Snapshot = {
   orders: BotOrder[];
   targets: Target[];
   targetsWarning: string | null;
+  bots?: Array<{ id: number; machine: string | null; heartbeat: string | null; online: boolean; profileReady: boolean; version: string | null }>;
 };
 
 const STATUS_CHIP: Record<BotOrder["status"], string> = {
@@ -135,6 +136,7 @@ export default function BotPage() {
   const [winInterval, setWinInterval] = useState(15);
   const [winBusy, setWinBusy] = useState(false);
   const [profileInfo, setProfileInfo] = useState<ProfileInfo | null>(null);
+  const [profileBot, setProfileBot] = useState(1);
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [profileForm, setProfileForm] = useState<ProfileForm>(EMPTY_PROFILE);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
@@ -145,7 +147,7 @@ export default function BotPage() {
     try {
       const [res, pRes] = await Promise.all([
         fetch("/api/bot", { cache: "no-store" }),
-        fetch("/api/bot/profile", { cache: "no-store" }),
+        fetch(`/api/bot/profile?bot=${profileBot}`, { cache: "no-store" }),
       ]);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
@@ -157,7 +159,7 @@ export default function BotPage() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [profileBot]);
 
   useEffect(() => {
     load();
@@ -258,7 +260,7 @@ export default function BotPage() {
     setProfileMsg(null);
     try {
       const ciphertext = await encryptForMini(profileInfo.pubkey, f);
-      const res = await fetch("/api/bot/profile", {
+      const res = await fetch(`/api/bot/profile?bot=${profileBot}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ciphertext }),
@@ -327,21 +329,42 @@ export default function BotPage() {
       {/* status cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Bot Agent</div>
-          <div className={`mt-1.5 flex items-center gap-2 text-sm font-semibold ${online ? "text-green-400" : "text-red-400"}`}>
-            <span className={`inline-block w-2 h-2 rounded-full ${online ? "bg-green-400 animate-pulse" : "bg-red-400"}`} />
-            {online ? "Online" : "Offline"}
-          </div>
-          <div className="text-[11px] text-gray-500 mt-1">
-            {snap?.config?.agentMachine ?? "no heartbeat yet"} · {timeAgo(snap?.config?.agentHeartbeat ?? null)}
-          </div>
-          <div className="text-[11px] mt-0.5">
-            {snap?.config?.agentProfileReady ? (
-              <span className="text-green-400">💳 checkout profile ready (encrypted, on-device)</span>
-            ) : (
-              <span className="text-gray-600">💳 no checkout profile on the bot — wallet-only buying</span>
-            )}
-          </div>
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Bot Agents</div>
+          {(snap?.bots ?? []).length > 0 ? (
+            <div className="mt-1.5 space-y-1.5">
+              {(snap?.bots ?? []).map((b) => (
+                <div key={b.id}>
+                  <div className={`flex items-center gap-2 text-sm font-semibold ${b.online ? "text-green-400" : "text-red-400"}`}>
+                    <span className={`inline-block w-2 h-2 rounded-full ${b.online ? "bg-green-400 animate-pulse" : "bg-red-400"}`} />
+                    #{b.id} {b.online ? "Online" : "Offline"}
+                  </div>
+                  <div className="text-[11px] text-gray-500 mt-0.5">
+                    {b.machine ?? "no heartbeat yet"} · {timeAgo(b.heartbeat)}
+                    {b.profileReady
+                      ? <span className="text-green-400"> · 💳 profile ready</span>
+                      : <span className="text-gray-600"> · 💳 no profile</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-1.5">
+              <div className={`flex items-center gap-2 text-sm font-semibold ${online ? "text-green-400" : "text-red-400"}`}>
+                <span className={`inline-block w-2 h-2 rounded-full ${online ? "bg-green-400 animate-pulse" : "bg-red-400"}`} />
+                {online ? "Online" : "Offline"}
+              </div>
+              <div className="text-[11px] text-gray-500 mt-1">
+                {snap?.config?.agentMachine ?? "no heartbeat yet"} · {timeAgo(snap?.config?.agentHeartbeat ?? null)}
+              </div>
+              <div className="text-[11px] mt-0.5">
+                {snap?.config?.agentProfileReady ? (
+                  <span className="text-green-400">💳 checkout profile ready (encrypted, on-device)</span>
+                ) : (
+                  <span className="text-gray-600">💳 no checkout profile on the bot — wallet-only buying</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
@@ -388,12 +411,26 @@ export default function BotPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-white text-sm font-medium">
                 <CreditCard size={14} className="text-yellow-400" />
+                {(snap?.bots ?? []).length > 1 && (
+                  <select
+                    value={profileBot}
+                    onChange={(e) => setProfileBot(Number(e.target.value))}
+                    className="bg-gray-800 border border-gray-700 rounded-lg text-xs text-gray-200 px-2 py-1"
+                    aria-label="Send profile to bot"
+                  >
+                    {(snap?.bots ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>
+                        Bot #{b.id} — {b.machine ?? "not connected yet"}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 {profileInfo?.masked ? (
                   <span>{profileInfo.masked}</span>
                 ) : profileInfo?.pending ? (
-                  <span className="text-yellow-300">encrypted profile queued — waiting for the Mac mini to pick it up</span>
+                  <span className="text-yellow-300">encrypted profile queued — waiting for the bot to pick it up</span>
                 ) : (
-                  <span className="text-gray-500">no checkout profile on the bot yet</span>
+                  <span className="text-gray-500">no checkout profile on bot #{profileBot} yet</span>
                 )}
               </div>
               <div className="text-[11px] text-gray-500 mt-1">

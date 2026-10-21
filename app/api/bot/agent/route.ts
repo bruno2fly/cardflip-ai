@@ -4,22 +4,22 @@ import { supabase } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 /**
- * Buy Bot agent endpoint — the ONLY route the Mac mini (DropBot) talks to.
+ * Buy Bot agent endpoint — the ONLY route the machines (DropBot) talk to.
  *
- * Auth: every request must carry header `x-bot-key: $BOT_AGENT_KEY` (set in
- * Vercel env). The key is a shared secret between this deployment and the
- * bot's config.json, not a user session — the mini has no browser login.
- * If BOT_AGENT_KEY is not configured the route 503s with a clear message
- * instead of silently allowing unauthenticated queue control.
+ * Auth: every request must carry header `x-bot-key`. The key resolves to ONE
+ * row in bot_config (multi-bot: each machine has its own key + row, so two
+ * machines can run two Target accounts side by side). The env-var
+ * BOT_AGENT_KEY is the legacy/fallback key bound to row 1 for backward
+ * compatibility. If nothing matches, 401.
  *
  * Protocol (POST JSON, one `action` per call):
- *   heartbeat → {version?, machine?}    stamp bot_config; echoes `armed` back
- *   config    →                          {armed, targets[]} for the mini's watchlist
- *   claim     →                          oldest queued order → running, returned to the agent
+ *   heartbeat → {version?, machine?}    stamp this bot's row; echoes `armed` back
+ *   config    →                          {armed, targets[], dropWindows} (watchlist + windows are global)
+ *   claim     →                          oldest queued order → running (atomic, first-wins across bots)
  *   update    → {orderId, status, error?, price?}   finish a claimed order
  *   report    → {tcin, productName, status, price?, error?}
  *              the bot bought (or failed) on its own detection — insert a
- *              completed order row so the platform shows the full history
+ *              completed order row stamped with this bot's id
  */
 
 const ORDER_COLUMNS =
@@ -29,15 +29,32 @@ function unauthorized() {
   return NextResponse.json({ error: "bad or missing x-bot-key" }, { status: 401 });
 }
 
+/** Resolve the x-bot-key header to a bot_config row id (or null). */
+async function resolveBotId(key: string | null): Promise<number | null> {
+  if (!key || !supabase) return null;
+  // exact match against per-bot keys
+  const { data: byKey } = await supabase
+    .from("bot_config")
+    .select("id")
+    .eq("bot_key", key)
+    .maybeSingle();
+  if (byKey) return (byKey as { id: number }).id;
+  // legacy fallback: the env key belongs to row 1
+  if (process.env.BOT_AGENT_KEY && key === process.env.BOT_AGENT_KEY) return 1;
+  return null;
+}
+
 export async function POST(req: NextRequest) {
-  const expected = process.env.BOT_AGENT_KEY;
-  if (!expected) {
-    return NextResponse.json(
-      { error: "BOT_AGENT_KEY env var is not set — set it in Vercel and put the same value in DropBot's config.json (bot_key)" },
-      { status: 503 }
-    );
+  const botId = await resolveBotId(req.headers.get("x-bot-key"));
+  if (botId == null) {
+    if (!process.env.BOT_AGENT_KEY) {
+      return NextResponse.json(
+        { error: "no bot keys configured — set BOT_AGENT_KEY in Vercel or add bot_key rows in bot_config" },
+        { status: 503 }
+      );
+    }
+    return unauthorized();
   }
-  if (req.headers.get("x-bot-key") !== expected) return unauthorized();
 
   let body: Record<string, unknown>;
   try {
@@ -55,12 +72,12 @@ export async function POST(req: NextRequest) {
     if (typeof body.version === "string") patch.agent_version = body.version;
     if (typeof body.machine === "string") patch.agent_machine = body.machine;
     if (typeof body.profileReady === "boolean") patch.agent_profile_ready = body.profileReady;
-    const { error } = await supabase.from("bot_config").update(patch).eq("id", 1);
+    const { error } = await supabase.from("bot_config").update(patch).eq("id", botId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     const { data: cfg } = await supabase
       .from("bot_config")
       .select("armed")
-      .eq("id", 1)
+      .eq("id", botId)
       .single();
     return NextResponse.json({ ok: true, armed: cfg?.armed ?? false });
   }
@@ -70,7 +87,7 @@ export async function POST(req: NextRequest) {
     const { data: cfg } = await supabase
       .from("bot_config")
       .select("armed")
-      .eq("id", 1)
+      .eq("id", botId)
       .single();
     // auto_buy column comes from supabase/watchlist_add_auto_buy.sql; if that
     // migration has not been run yet, degrade to an empty target list rather
@@ -114,7 +131,7 @@ export async function POST(req: NextRequest) {
     const { data: cfgRow } = await supabase
       .from("bot_config")
       .select("drop_windows")
-      .eq("id", 1)
+      .eq("id", botId)
       .single();
     const dropWindows = (cfgRow as { drop_windows?: unknown } | null)?.drop_windows ?? [];
     return NextResponse.json({ ok: true, armed: cfg?.armed ?? false, targets, dropWindows });
@@ -133,18 +150,25 @@ export async function POST(req: NextRequest) {
       | { id: string; status: string; tcin: string; product_name: string; price: number | null }
       | undefined;
     if (!first) return NextResponse.json({ ok: true, order: null });
-    const { error: updErr } = await supabase
+    // atomic first-wins: only transition if STILL queued (two bots can race
+    // here - the loser gets no row back and simply polls again next cycle)
+    const { data: won, error: updErr } = await supabase
       .from("bot_orders")
-      .update({ status: "running", claimed_at: new Date().toISOString() })
-      .eq("id", first.id);
+      .update({ status: "running", claimed_at: new Date().toISOString(), bot_id: botId })
+      .eq("id", first.id)
+      .eq("status", "queued")
+      .select("id, tcin, product_name, price")
+      .maybeSingle();
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    if (!won) return NextResponse.json({ ok: true, order: null, raced: true });
+    const claimed = won as { id: string; tcin: string; product_name: string; price: number | null };
     return NextResponse.json({
       ok: true,
       order: {
-        id: first.id,
-        tcin: first.tcin,
-        productName: first.product_name,
-        price: first.price,
+        id: claimed.id,
+        tcin: claimed.tcin,
+        productName: claimed.product_name,
+        price: claimed.price,
       },
     });
   }
@@ -180,6 +204,7 @@ export async function POST(req: NextRequest) {
       status,
       source: "auto",
       finished_at: new Date().toISOString(),
+      bot_id: botId,
     };
     if (typeof body.price === "number") insert.price = body.price;
     if (typeof body.error === "string") insert.error = body.error;
@@ -195,7 +220,7 @@ export async function POST(req: NextRequest) {
     const { data: cur } = await supabase
       .from("bot_config")
       .select("profile_pubkey")
-      .eq("id", 1)
+      .eq("id", botId)
       .single();
     const changed = (cur as { profile_pubkey?: string | null } | null)?.profile_pubkey !== pem;
     const patch: Record<string, unknown> = { profile_pubkey: pem };
@@ -203,7 +228,7 @@ export async function POST(req: NextRequest) {
       // new key = any pending ciphertext is undecryptable; drop it
       patch.profile_ciphertext = null;
     }
-    const { error } = await supabase.from("bot_config").update(patch).eq("id", 1);
+    const { error } = await supabase.from("bot_config").update(patch).eq("id", botId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
@@ -213,7 +238,7 @@ export async function POST(req: NextRequest) {
     const { data } = await supabase
       .from("bot_config")
       .select("profile_ciphertext")
-      .eq("id", 1)
+      .eq("id", botId)
       .single();
     const ct = (data as { profile_ciphertext?: string | null } | null)?.profile_ciphertext ?? null;
     return NextResponse.json({ ok: true, ciphertext: ct });
@@ -226,7 +251,7 @@ export async function POST(req: NextRequest) {
     const { error } = await supabase
       .from("bot_config")
       .update({ profile_ciphertext: null, profile_masked: masked, profile_updated_at: new Date().toISOString() })
-      .eq("id", 1);
+      .eq("id", botId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
   }

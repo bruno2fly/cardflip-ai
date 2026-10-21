@@ -14,16 +14,27 @@ export const dynamic = "force-dynamic";
  *          decrypts with its private key on pickup and clears the row.
  */
 
-export async function GET() {
+/** Resolve the ?bot= query param to a bot_config row id (default 1). */
+function botIdFromReq(url: string): number {
+  try {
+    const n = Number(new URL(url).searchParams.get("bot") ?? "1");
+    return Number.isInteger(n) && n >= 1 ? n : 1;
+  } catch {
+    return 1;
+  }
+}
+
+export async function GET(req: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "supabase not configured" }, { status: 503 });
+  const botId = botIdFromReq(req.url);
   const { data, error } = await supabase
     .from("bot_config")
     .select("profile_pubkey, profile_masked, profile_ciphertext, profile_updated_at")
-    .eq("id", 1)
-    .single();
+    .eq("id", botId)
+    .maybeSingle();
   if (error || !data) {
     return NextResponse.json(
-      { error: "bot_config missing — run supabase/bot_orders.sql in the Supabase SQL Editor" },
+      { error: "bot_config row missing — run supabase/bot_orders.sql in the Supabase SQL Editor" },
       { status: 503 }
     );
   }
@@ -53,11 +64,12 @@ export async function POST(req: NextRequest) {
   if (!ciphertext || ciphertext.length < 100) {
     return NextResponse.json({ error: "ciphertext required (browser-encrypted)" }, { status: 400 });
   }
+  const botId = botIdFromReq(req.url);
   const { data: cur } = await supabase
     .from("bot_config")
     .select("profile_pubkey")
-    .eq("id", 1)
-    .single();
+    .eq("id", botId)
+    .maybeSingle();
   if (!(cur as { profile_pubkey?: string | null } | null)?.profile_pubkey) {
     return NextResponse.json(
       { error: "no public key yet — start the bot once so it publishes its key, then retry" },
@@ -70,7 +82,7 @@ export async function POST(req: NextRequest) {
       profile_ciphertext: ciphertext,
       profile_updated_at: new Date().toISOString(),
     })
-    .eq("id", 1);
+    .eq("id", botId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

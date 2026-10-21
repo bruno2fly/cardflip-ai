@@ -24,6 +24,7 @@ export type BotOrder = {
   createdAt: string;
   claimedAt: string | null;
   finishedAt: string | null;
+  botId?: number | null;
 };
 
 /** One fast-poll window (Stellar-style dynamic delay). Local time, no offset. */
@@ -55,10 +56,11 @@ type BotOrderRow = {
   created_at: string;
   claimed_at: string | null;
   finished_at: string | null;
+  bot_id?: number | null;
 };
 
 const ORDER_COLUMNS =
-  "id, tcin, product_name, retailer, status, source, price, error, created_at, claimed_at, finished_at";
+  "id, tcin, product_name, retailer, status, source, price, error, created_at, claimed_at, finished_at, bot_id";
 
 function orderFromRow(row: BotOrderRow): BotOrder {
   return {
@@ -73,6 +75,7 @@ function orderFromRow(row: BotOrderRow): BotOrder {
     createdAt: row.created_at,
     claimedAt: row.claimed_at,
     finishedAt: row.finished_at,
+    botId: row.bot_id ?? null,
   };
 }
 
@@ -195,4 +198,31 @@ export const BOT_ONLINE_WINDOW_MS = 2 * 60 * 1000;
 export function agentIsOnline(cfg: BotConfig | null): boolean {
   if (!cfg?.agentHeartbeat) return false;
   return Date.now() - new Date(cfg.agentHeartbeat).getTime() < BOT_ONLINE_WINDOW_MS;
+}
+
+export type BotStatus = {
+  id: number;
+  machine: string | null;
+  heartbeat: string | null;
+  online: boolean;
+  profileReady: boolean;
+  version: string | null;
+};
+
+/** All registered bots (one row per machine — multi-bot support). */
+export async function listBots(): Promise<BotStatus[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("bot_config")
+    .select("id, agent_machine, agent_heartbeat, agent_profile_ready, agent_version")
+    .order("id", { ascending: true });
+  if (error || !data) return [];
+  return (data as Array<Record<string, unknown>>).map((r) => ({
+    id: Number(r.id),
+    machine: (r.agent_machine as string | null) ?? null,
+    heartbeat: (r.agent_heartbeat as string | null) ?? null,
+    online: !!(r.agent_heartbeat) && Date.now() - new Date(String(r.agent_heartbeat)).getTime() < BOT_ONLINE_WINDOW_MS,
+    profileReady: Boolean(r.agent_profile_ready),
+    version: (r.agent_version as string | null) ?? null,
+  }));
 }

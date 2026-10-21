@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getBotConfig, listBotOrders, agentIsOnline, activeDropWindow } from "@/lib/bot";
+import { getBotConfig, listBotOrders, agentIsOnline, activeDropWindow, listBots } from "@/lib/bot";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  */
 
 export async function GET() {
-  const [config, orders] = await Promise.all([getBotConfig(), listBotOrders(100)]);
+  const [config, orders, bots] = await Promise.all([getBotConfig(), listBotOrders(100), listBots()]);
 
   let targets: Array<{
     tcin: string;
@@ -58,5 +58,6 @@ export async function GET() {
     orders: orders ?? [],
     targets,
     targetsWarning,
+    bots,
   });
 }
