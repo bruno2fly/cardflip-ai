@@ -414,7 +414,12 @@ export default function BotPage() {
                 {(snap?.bots ?? []).length > 1 && (
                   <select
                     value={profileBot}
-                    onChange={(e) => setProfileBot(Number(e.target.value))}
+                    onChange={(e) => {
+                      // drop the other bot's pubkey immediately so a fast Send
+                      // click can never encrypt to the wrong bot's key
+                      setProfileInfo(null);
+                      setProfileBot(Number(e.target.value));
+                    }}
                     className="bg-gray-800 border border-gray-700 rounded-lg text-xs text-gray-200 px-2 py-1"
                     aria-label="Send profile to bot"
                   >

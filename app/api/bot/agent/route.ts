@@ -74,20 +74,22 @@ export async function POST(req: NextRequest) {
     if (typeof body.profileReady === "boolean") patch.agent_profile_ready = body.profileReady;
     const { error } = await supabase.from("bot_config").update(patch).eq("id", botId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    // armed is the GLOBAL kill switch (row 1) — every bot obeys the same switch
     const { data: cfg } = await supabase
       .from("bot_config")
       .select("armed")
-      .eq("id", botId)
+      .eq("id", 1)
       .single();
     return NextResponse.json({ ok: true, armed: cfg?.armed ?? false });
   }
 
   // -- config (arm state + auto-buy targets) ---------------------------------
   if (action === "config") {
+    // armed is the GLOBAL kill switch (row 1) — every bot obeys the same switch
     const { data: cfg } = await supabase
       .from("bot_config")
       .select("armed")
-      .eq("id", botId)
+      .eq("id", 1)
       .single();
     // auto_buy column comes from supabase/watchlist_add_auto_buy.sql; if that
     // migration has not been run yet, degrade to an empty target list rather
@@ -125,13 +127,12 @@ export async function POST(req: NextRequest) {
           msrp: row.msrp,
         };
       });
-    // Drop windows: local-time ISO strings; the monitor compares against
-    // its own clock, so times mean the same moment as in the browser that
-    // scheduled them (same timezone).
+    // Drop windows + armed are GLOBAL (row 1): all bots hunt the same
+    // items on the same schedule; only identity/profiles are per-bot.
     const { data: cfgRow } = await supabase
       .from("bot_config")
       .select("drop_windows")
-      .eq("id", botId)
+      .eq("id", 1)
       .single();
     const dropWindows = (cfgRow as { drop_windows?: unknown } | null)?.drop_windows ?? [];
     return NextResponse.json({ ok: true, armed: cfg?.armed ?? false, targets, dropWindows });
