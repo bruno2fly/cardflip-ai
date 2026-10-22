@@ -140,6 +140,16 @@ export async function POST(req: NextRequest) {
 
   // -- claim (oldest queued → running) ---------------------------------------
   if (action === "claim") {
+    // per-bot pause switch: a paused bot never claims orders (used to route a
+    // purchase to one specific machine during multi-bot tests/purchases)
+    const { data: self } = await supabase
+      .from("bot_config")
+      .select("claims_paused")
+      .eq("id", botId)
+      .single();
+    if ((self as { claims_paused?: boolean } | null)?.claims_paused === true) {
+      return NextResponse.json({ ok: true, order: null, paused: true });
+    }
     const { data: queued, error } = await supabase
       .from("bot_orders")
       .select(ORDER_COLUMNS)
