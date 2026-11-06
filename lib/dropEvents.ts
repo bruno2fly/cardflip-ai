@@ -19,6 +19,18 @@
 
 export type DropConfidence = "confirmed" | "expected" | "rumored";
 
+/**
+ * What KIND of drop this is — the radar shows this as a badge because the
+ * play is completely different per type (bot it vs queue up vs enter a
+ * drawing vs just be awake).
+ */
+export type DropType =
+  | "street-date"      // official release day — product loads overnight before
+  | "overnight-restock"// Target's recurring ~3 AM ET restock burst
+  | "drawing"          // raffle entry (Walmart Collectibles Draw style)
+  | "invite"           // invitation-gated sale (Best Buy style)
+  | "queue"            // virtual queue launch (Pokémon Center style);
+
 // A product referenced by an event that ISN'T in the Target catalog (no TCIN
 // to resolve/track) — e.g. a Walmart-only drawing/raffle item. Shown as plain
 // info with a direct link, no "Track" button (there's nothing to watchlist
@@ -33,6 +45,7 @@ export type DropEvent = {
   id: string;
   title: string;          // "30th Celebration — Target retail drop"
   retailer: string;       // "Target"
+  type: DropType;         // how this drop plays (see DropType)
   dropsAt: string;        // ISO datetime the drop is expected to go live
   window?: string;        // short human hint, e.g. "Street date · watch overnight loads"
   confidence: DropConfidence;
@@ -45,46 +58,91 @@ export type DropEvent = {
 
 export const DROP_EVENTS: DropEvent[] = [
   {
-    id: "30th-celebration-walmart-drawing",
-    title: "30th Celebration — Walmart Collectibles Drawing",
-    retailer: "Walmart",
-    // Drawing opens Sep 16, 2026, 2:00pm PDT = 5:00pm ET. Entry window runs
-    // ~2 hours per Bruno's research (Polygon / Thornberry Media, Sep 14-15,
-    // 2026 coverage of Walmart's Collectibles Draw page).
-    dropsAt: "2026-09-16T17:00:00-04:00",
-    window: "Entries open 5:00 PM ET · drawing runs ~2 hours",
+    id: "target-friday-overnight-restock",
+    title: "Target overnight restock burst",
+    retailer: "Target",
+    type: "overnight-restock",
+    // Target's recurring pattern: Friday overnights, roughly 2:45–6:30 AM ET
+    // (tracked live by RestockR/Restockd on Oct 23, Oct 28, Nov 4 and Nov 6).
+    // This event is dated to the NEXT Friday and refreshed when it passes —
+    // the pattern itself is weekly, not one-off.
+    dropsAt: "2026-11-13T02:45:00-05:00",
+    window: "Friday 2:45–6:30 AM ET · fast-poll window already scheduled",
+    confidence: "expected",
+    note:
+      "Target's recurring Pokémon restock burst — most Friday overnights around 3 AM ET, staggered per item, gone in ~90 seconds. The DropBot's fast-poll window is scheduled for these hours automatically; arm the products you want and sleep through it.",
+    sourceUrl: "https://www.restockr.app/pokemon-restocks/target",
+    tcins: [], // whatever is armed on the bot watchlist at the time
+  },
+  {
+    id: "delta-reign-bestbuy-invite",
+    title: "Delta Reign Booster Box — Best Buy invite",
+    retailer: "Best Buy",
+    type: "invite",
+    // Best Buy opened Delta Reign Booster Box invites at $160.99 (Nov 4,
+    // ptcg.news) — invitation-gated, account required, entry while open.
+    dropsAt: "2026-11-10T12:00:00-05:00",
+    window: "Invites open now — closes when allocated",
     confidence: "confirmed",
     note:
-      "Walmart is running its Collectibles Draw (a raffle, not a straight buy-now) for four 30th Celebration items. Enter at the drawing page below during the window — no Target TCIN to track here since it's a Walmart-run raffle, not a normal in-stock flip.",
-    sourceUrl: "https://www.walmart.com/shop/collectibles/draw",
+      "Best Buy is selling the Delta Reign Booster Box at $160.99 through its invitation system — not a race the bot can win, an entry you have to make on a warmed-up Best Buy account. Enter while the invite is open; stock is allocated to invited accounts only.",
+    sourceUrl: "https://www.bestbuy.com/",
     tcins: [],
     externalProducts: [
-      { name: "30th Celebration Elite Trainer Box (2-pack drawing)", price: 139.94, url: "https://www.walmart.com/shop/collectibles/draw" },
-      { name: "30th Celebration Sylveon ex + Greninja ex Box bundle", price: 69.49, url: "https://www.walmart.com/shop/collectibles/draw" },
-      { name: "30th Celebration Poster Collection (6-pack drawing)", price: 119.82, url: "https://www.walmart.com/shop/collectibles/draw" },
-      { name: "30th Celebration Tech Sticker Collection (12-count drawing)", price: 239.64, url: "https://www.walmart.com/shop/collectibles/draw" },
+      { name: "Delta Reign Booster Box (Best Buy invite, $160.99)", price: 160.99, url: "https://www.bestbuy.com/" },
     ],
   },
   {
-    id: "30th-celebration-target",
-    title: "30th Celebration — Target retail drop",
-    retailer: "Target",
-    // Official street date confirmed on pokemon.com (Sept 16, 2026). Retail
-    // typically loads overnight before street date — watch the direct links.
-    dropsAt: "2026-09-16T00:00:00-04:00",
-    window: "Street date — watch for overnight Target loads",
+    id: "mega-greninja-league-deck-nov13",
+    title: "Mega Greninja ex League Battle Deck",
+    retailer: "Target / Pokémon Center",
+    type: "street-date",
+    // Nov 13 street date per Pokémon's November lineup (ptcg.news round-up).
+    dropsAt: "2026-11-13T00:00:00-05:00",
+    window: "Street date Friday — watch overnight loads Thursday into Friday",
     confidence: "confirmed",
     note:
-      "Pokémon TCG 30th Celebration wave lands at Target on its Sept 16 street date. Target usually loads product overnight before the date, so keep the direct links ready and Track the set to get alerted the moment any of these flip in stock.",
-    sourceUrl: "https://tcg.pokemon.com/en-us/expansions/",
+      "Mega Greninja ex League Battle Deck lands Nov 13. Retail loads overnight before street date — Target TCIN gets pinned to the bot as soon as the listing resolves; Pokémon Center runs a queue launch the same day.",
+    sourceUrl: "https://ptcg.news/news/",
+    tcins: [],
+  },
+  {
+    id: "30th-celebration-final-wave-dec4",
+    title: "30th Celebration final wave — Binder Collection + ex Tins",
+    retailer: "Target",
+    type: "street-date",
+    // Dec 4 street date for the final 30th Celebration wave (cardrake.com
+    // wave table). Binder Collection + Pokémon ex Tins. The TCINs below are
+    // already listed on Target (pre-listed, OOS) and on the bot watchlist.
+    dropsAt: "2026-12-04T00:00:00-05:00",
+    window: "Street date Friday — overnight load Thursday into Friday",
+    confidence: "confirmed",
+    note:
+      "The final 30th Celebration wave: Binder Collection ($44.99) and the Pokémon ex Tins ($29.99). Both TCINs are already listed and armed on the bot — this is the big one to have the fast-poll window scheduled for.",
+    sourceUrl: "https://www.cardrake.com/expansions/cel30",
     tcins: [
-      1010892076, // Elite Trainer Box — $69.99
-      1010892065, // Greninja ex Box — $29.99
-      1010892068, // Sylveon ex Box — $29.99
-      1010892069, // Tin (Sylveon or Greninja) — $29.99
-      1010892067, // Poster Collection — $19.99
-      1010892078, // Tech Sticker Collection — $19.99
-      1010892070, // Knock Out Collection — $11.99
+      1010892074, // Binder Collection — $44.99
+      1010892069, // Pokémon ex Tin (Sylveon or Greninja) — $29.99
+    ],
+  },
+  {
+    id: "upc-restock-watch",
+    title: "30th Celebration Ultra Premium Collections — restock watch",
+    retailer: "Target / Best Buy / Pokémon Center",
+    type: "overnight-restock",
+    // Nov 6 street date passed; UPCs are the hottest 30th Celebration item
+    // and restock in bursts. Target $249.99 (marked up from $179.99 MSRP),
+    // Best Buy $179.99 invite-gated, Pokémon Center queue.
+    dropsAt: "2026-11-07T02:45:00-05:00",
+    window: "Restock bursts — Friday overnights + staggered daytime flickers",
+    confidence: "expected",
+    note:
+      "The Day/Night UPCs sold out on street date and restock in short bursts. Target lists them at $249.99 (above the $179.99 MSRP — currently NOT armed on the bot for that reason); Best Buy sells at $179.99 but invite-gates the sale; Pokémon Center runs a queue. Day/Night TCINs: 1012850570 / 1012850572.",
+    sourceUrl: "https://www.ign.com/articles/where-to-buy-pokemon-tcg-30th-celebration-ultra-premium-collection",
+    tcins: [],
+    externalProducts: [
+      { name: "UPC Day — Target $249.99 (marked up, not armed)", price: 249.99, url: "https://www.target.com/p/A-1012850570" },
+      { name: "UPC Day/Night — Best Buy $179.99 (invite-gated)", price: 179.99, url: "https://www.bestbuy.com/" },
     ],
   },
 ];

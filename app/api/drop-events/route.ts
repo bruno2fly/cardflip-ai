@@ -36,6 +36,7 @@ export async function GET() {
     id: event.id,
     title: event.title,
     retailer: event.retailer,
+    type: event.type,
     dropsAt: event.dropsAt,
     window: event.window ?? null,
     confidence: event.confidence,

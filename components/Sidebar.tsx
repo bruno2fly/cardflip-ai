@@ -19,9 +19,9 @@ const sections: NavSection[] = [
   {
     title: "Sealed Product",
     items: [
+      { href: "/bot", label: "🤖 Buy Bot", icon: Bot },
       { href: "/restocks", label: "🎯 Drops", icon: Crosshair },
       { href: "/drops", label: "🟢 Buy Now", icon: ShoppingCart },
-      { href: "/bot", label: "🤖 Buy Bot", icon: Bot },
       { href: "/", label: "Sealed Products", icon: Package2 },
       { href: "/sealed-inventory", label: "Sealed Inventory", icon: Archive },
       { href: "/watchlist", label: "⭐ Watchlist", icon: Eye },

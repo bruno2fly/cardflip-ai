@@ -18,6 +18,8 @@ export async function GET() {
     name: string;
     msrp: number | null;
     autoBuy: boolean;
+    imageUrl: string | null;
+    url: string | null;
   }> = [];
   let targetsWarning: string | null = null;
 
@@ -27,14 +29,14 @@ export async function GET() {
     let rows: Record<string, unknown>[] | null = null;
     const q = await supabase
       .from("watchlist")
-      .select("product_name, target_tcin, msrp, auto_buy")
+      .select("product_name, target_tcin, msrp, auto_buy, image_url, target_url")
       .not("target_tcin", "is", null)
       .order("added_at", { ascending: false });
     let warning: string | null = null;
     if (q.error) {
       const fb = await supabase
         .from("watchlist")
-        .select("product_name, target_tcin, msrp")
+        .select("product_name, target_tcin, msrp, image_url, target_url")
         .not("target_tcin", "is", null)
         .order("added_at", { ascending: false });
       rows = (fb.data ?? null) as Record<string, unknown>[] | null;
@@ -48,6 +50,8 @@ export async function GET() {
       name: String(r.product_name),
       msrp: (r.msrp as number | null) ?? null,
       autoBuy: Boolean(r.auto_buy),
+      imageUrl: (r.image_url as string | null) ?? null,
+      url: (r.target_url as string | null) ?? null,
     }));
   }
 
