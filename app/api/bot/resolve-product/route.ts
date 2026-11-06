@@ -32,6 +32,16 @@ function productUrl(tcin: string): string {
 }
 
 /** Pull the TCIN out of a pasted target.com URL or a raw TCIN string. */
+/** Target titles arrive with HTML entities (Pok&#233;mon) — decode them. */
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_m: string, d: string) => String.fromCharCode(Number(d)))
+    .replace(/"/g, '"')
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">");
+}
+
 function extractTcin(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
@@ -89,7 +99,7 @@ async function viaRedsky(tcin: string): Promise<Resolved | null> {
     const priceStr = p?.price?.formatted_current_price?.price_string ?? null;
     return {
       tcin,
-      name: p?.item?.product_description?.title ?? null,
+      name: p?.item?.product_description?.title ? decodeEntities(p.item.product_description.title) : null,
       price: priceStr ? Number(String(priceStr).replace(/[^0-9.]/g, "")) || null : null,
       imageUrl: p?.item?.enrichment?.images?.primary_image_url ?? null,
       availability,
@@ -175,7 +185,7 @@ function findProductNode(root: unknown): { title: string | null; price: string |
   }
   // TS can't track the assignment inside the walk closure — read through a cast.
   const t = title as string | null;
-  if (t) title = t.replace(/&#(\d+);/g, (_m: string, d: string) => String.fromCharCode(Number(d)));
+  if (t) title = decodeEntities(t);
   if (!title && !price && !image) return null;
   return { title, price, image };
 }
@@ -199,7 +209,24 @@ export async function POST(req: NextRequest) {
   }
 
   const viaApi = await viaRedsky(tcin);
-  if (viaApi && viaApi.name) return NextResponse.json({ ok: true, product: viaApi });
+  if (viaApi && viaApi.name) {
+    // Redsky gives price + availability; the PDP __NEXT_DATA__ has the scene7
+    // image Redsky sometimes omits — merge when the image is missing.
+    if (!viaApi.imageUrl || !viaApi.price) {
+      const viaPage = await viaProductPage(tcin);
+      if (viaPage?.name) {
+        return NextResponse.json({
+          ok: true,
+          product: {
+            ...viaApi,
+            imageUrl: viaApi.imageUrl ?? viaPage.imageUrl,
+            price: viaApi.price ?? viaPage.price,
+          },
+        });
+      }
+    }
+    return NextResponse.json({ ok: true, product: viaApi });
+  }
 
   const viaPage = await viaProductPage(tcin);
   if (viaPage && viaPage.name) return NextResponse.json({ ok: true, product: viaPage });
