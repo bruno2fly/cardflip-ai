@@ -33,7 +33,6 @@ import {
   Zap,
   CalendarPlus,
   CreditCard,
-  Plus,
   Search,
   Radar,
   Bell,
@@ -792,14 +791,14 @@ export default function BotPage() {
       <div className="space-y-2">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-500 flex items-center gap-1.5">
           <Radar size={13} /> Drops Radar
-          <span className="text-gray-600 font-normal normal-case tracking-normal">— what's coming, what type of drop it is, and how to play it</span>
+          <span className="text-gray-600 font-normal normal-case tracking-normal">— what&#39;s coming, what type of drop it is, and how to play it</span>
         </h2>
         {events === null && (
           <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-gray-500 text-sm">Loading the drop calendar…</div>
         )}
         {events !== null && events.length === 0 && (
           <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-gray-500 text-sm">
-            No upcoming drops on the calendar right now — the next scheduled street date gets added here as soon as it's confirmed.
+            No upcoming drops on the calendar right now — the next scheduled street date gets added here as soon as it&#39;s confirmed.
           </div>
         )}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
@@ -1028,7 +1027,7 @@ export default function BotPage() {
         <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-500">Order Feed</h2>
         <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800/70">
           {(snap?.orders ?? []).length === 0 && (
-            <div className="px-4 py-3 text-gray-500 text-sm">No orders yet. The bot's first catch will appear here.</div>
+            <div className="px-4 py-3 text-gray-500 text-sm">No orders yet. The bot&#39;s first catch will appear here.</div>
           )}
           {(snap?.orders ?? []).map(o => (
             <div key={o.id} className="flex items-center gap-3 px-4 py-3">
@@ -1095,7 +1094,7 @@ export default function BotPage() {
                 )}
               </div>
               <div className="text-[11px] text-gray-500 mt-1">
-                Zero-knowledge: this page encrypts your card with the bot machine's own key before anything is sent — the platform
+                Zero-knowledge: this page encrypts your card with the bot machine&#39;s own key before anything is sent — the platform
                 only ever stores unreadable ciphertext.
               </div>
             </div>
@@ -1111,7 +1110,7 @@ export default function BotPage() {
             <div className="mt-3 border-t border-gray-800/70 pt-3 space-y-2">
               {!profileInfo?.pubkey && (
                 <div className="text-[11px] text-red-300">
-                  The bot hasn't published its encryption key yet — start the bot (install + login steps) and refresh.
+                  The bot hasn&#39;t published its encryption key yet — start the bot (install + login steps) and refresh.
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
