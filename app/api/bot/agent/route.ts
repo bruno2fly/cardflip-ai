@@ -94,10 +94,13 @@ export async function POST(req: NextRequest) {
     // auto_buy column comes from supabase/watchlist_add_auto_buy.sql; if that
     // migration has not been run yet, degrade to an empty target list rather
     // than erroring the agent.
+    // Target rows are keyed by target_tcin; Pokémon Center rows by retailer_sku.
+    // Include both — the bridge tags each watchlist entry with retailer + sku
+    // and the PC monitor watches the pokemoncenter ones.
     const { data: rows, error } = await supabase
       .from("watchlist")
-      .select("product_name, target_tcin, target_url, msrp, auto_buy")
-      .not("target_tcin", "is", null);
+      .select("product_name, target_tcin, target_url, msrp, auto_buy, retailer, retailer_sku")
+      .or("target_tcin.not.is.null,retailer_sku.not.is.null");
     if (error) {
       const { data: fallback } = await supabase
         .from("watchlist")
@@ -116,15 +119,25 @@ export async function POST(req: NextRequest) {
       .map((r) => {
         const row = r as {
           product_name: string;
-          target_tcin: number;
+          target_tcin: number | null;
           target_url: string | null;
           msrp: number | null;
+          retailer: string | null;
+          retailer_sku: string | null;
         };
+        const retailer = row.retailer === "pokemoncenter" ? "pokemoncenter" : "target";
+        const sku = row.retailer_sku ?? null;
         return {
-          tcin: String(row.target_tcin),
+          tcin: row.target_tcin != null ? String(row.target_tcin) : (sku ?? ""),
           name: row.product_name,
-          targetUrl: row.target_url ?? `https://www.target.com/p/-/A-${row.target_tcin}`,
+          targetUrl:
+            row.target_url ??
+            (retailer === "pokemoncenter" && sku
+              ? `https://www.pokemoncenter.com/product/${sku}`
+              : `https://www.target.com/p/-/A-${row.target_tcin}`),
           msrp: row.msrp,
+          retailer,
+          sku,
         };
       });
     // Drop windows + armed are GLOBAL (row 1): all bots hunt the same
