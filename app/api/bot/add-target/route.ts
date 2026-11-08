@@ -29,11 +29,66 @@ export async function POST(req: NextRequest) {
     autoBuy?: unknown;
     imageUrl?: unknown;
     url?: unknown;
+    retailer?: unknown;
+    sku?: unknown;
   };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
+  }
+
+  const retailer = body.retailer === "pokemoncenter" ? "pokemoncenter" : "target";
+
+  // Pokémon Center items: keyed by retailer_sku (e.g. 10-10242-101), no TCIN.
+  // The name can be empty — the machine's pc_monitor enriches the row (name,
+  // image, live price) on its first poll from a home IP.
+  if (retailer === "pokemoncenter") {
+    const sku = typeof body.sku === "string" ? body.sku.trim() : typeof body.tcin === "string" ? body.tcin.trim() : "";
+    if (!/^\d{2}-\d{4,6}-\d{2,3}$/.test(sku)) {
+      return NextResponse.json({ error: "Pokémon Center product code required (e.g. 10-10242-101, from the product link)" }, { status: 400 });
+    }
+    const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 300) : `Pokémon Center ${sku}`;
+    const msrpNum = Number(body.msrp);
+    const msrp = Number.isFinite(msrpNum) && msrpNum > 0 ? msrpNum : null;
+    if (msrp === null) {
+      return NextResponse.json({ error: "msrp (price cap) required — the bot refuses to buy above it" }, { status: 400 });
+    }
+    const autoBuy = body.autoBuy === undefined ? true : Boolean(body.autoBuy);
+    const imageUrl = typeof body.imageUrl === "string" && body.imageUrl.startsWith("http") ? body.imageUrl : null;
+    const url = typeof body.url === "string" && body.url.startsWith("http") ? body.url : `https://www.pokemoncenter.com/product/${sku}`;
+    const now = new Date().toISOString();
+    const row = {
+      product_name: name,
+      msrp,
+      target_tcin: null,
+      retailer,
+      retailer_sku: sku,
+      target_url: url,
+      image_url: imageUrl,
+      auto_buy: autoBuy,
+      source: "web-add",
+      updated_at: now,
+    };
+    const existing = await supabase
+      .from("watchlist")
+      .select("id")
+      .eq("retailer", "pokemoncenter")
+      .eq("retailer_sku", sku)
+      .maybeSingle();
+    if (existing.error) {
+      return NextResponse.json({ error: `lookup failed: ${existing.error.message}` }, { status: 500 });
+    }
+    let saved;
+    if (existing.data) {
+      saved = await supabase.from("watchlist").update(row).eq("id", existing.data.id).select("id, product_name, msrp, auto_buy").single();
+    } else {
+      saved = await supabase.from("watchlist").insert({ ...row, id: crypto.randomUUID(), added_at: now }).select("id, product_name, msrp, auto_buy").single();
+    }
+    if (saved.error) {
+      return NextResponse.json({ error: `save failed: ${saved.error.message}` }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, updated: Boolean(existing.data), target: saved.data });
   }
 
   const tcinRaw = typeof body.tcin === "string" || typeof body.tcin === "number" ? String(body.tcin) : "";

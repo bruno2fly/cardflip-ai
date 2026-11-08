@@ -206,8 +206,8 @@ export async function POST(req: NextRequest) {
   if (action === "report") {
     const tcin = typeof body.tcin === "string" || typeof body.tcin === "number" ? String(body.tcin) : null;
     const status = typeof body.status === "string" ? body.status : null;
-    if (!tcin || !status || !["ordered", "failed"].includes(status)) {
-      return NextResponse.json({ error: "tcin + status(ordered|failed) required" }, { status: 400 });
+    if (!tcin || !status || !["ordered", "failed", "alert"].includes(status)) {
+      return NextResponse.json({ error: "tcin + status(ordered|failed|alert) required" }, { status: 400 });
     }
     const insert: Record<string, unknown> = {
       tcin,
@@ -220,6 +220,24 @@ export async function POST(req: NextRequest) {
     if (typeof body.price === "number") insert.price = body.price;
     if (typeof body.error === "string") insert.error = body.error;
     const { error } = await supabase.from("bot_orders").insert(insert);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  // -- enrich (pc_monitor fills in name/image/price for PC watchlist rows) ------
+  if (action === "enrich") {
+    const sku = typeof body.sku === "string" ? body.sku : null;
+    if (!sku) return NextResponse.json({ error: "sku required" }, { status: 400 });
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (typeof body.name === "string" && body.name.trim()) patch.product_name = body.name.trim().slice(0, 300);
+    if (typeof body.imageUrl === "string" && body.imageUrl.startsWith("http")) patch.image_url = body.imageUrl;
+    if (typeof body.url === "string" && body.url.startsWith("http")) patch.target_url = body.url;
+    if (typeof body.price === "number" && body.price > 0) patch.market_price = body.price;
+    const { error } = await supabase
+      .from("watchlist")
+      .update(patch)
+      .eq("retailer", "pokemoncenter")
+      .eq("retailer_sku", sku);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
   }

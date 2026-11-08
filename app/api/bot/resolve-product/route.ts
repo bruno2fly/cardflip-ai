@@ -60,7 +60,7 @@ type Resolved = {
   imageUrl: string | null;
   availability: "in-stock" | "out-of-stock" | "preorder" | "unknown" | null;
   url: string;
-  source: "redsky" | "product-page" | "unresolved";
+  source: "redsky" | "product-page" | "unresolved" | "pokemoncenter" | "pokemoncenter-manual";
 };
 
 /** Strategy 1: RedSky product summary (the same API the DropBot monitor polls). */
@@ -190,6 +190,63 @@ function findProductNode(root: unknown): { title: string | null; price: string |
   return { title, price, image };
 }
 
+
+/**
+ * Pokémon Center: product pages embed a full product object (name, price,
+ * availability, images) in __NEXT_DATA__. The site blocks datacenter IPs
+ * (DataDome), so from Vercel this usually fails — the UI then offers the
+ * manual add and the bot machine (home IP) enriches the row on its first
+ * poll via the pc_monitor.
+ */
+function extractPcSku(input: string): string | null {
+  const m = input.match(/pokemoncenter\.com\/product\/([\w-]+)/i);
+  if (m) return m[1];
+  // bare SKU pasted (e.g. 10-10242-101)
+  if (/^\d{2}-\d{4,6}-\d{2,3}$/.test(input.trim())) return input.trim();
+  return null;
+}
+
+async function viaPokemonCenter(sku: string): Promise<Resolved | null> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(`https://www.pokemoncenter.com/product/${sku}`, {
+      headers: { "User-Agent": UA },
+      signal: ctrl.signal,
+      cache: "no-store",
+    });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const html = await res.text();
+    const m = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+    if (!m) return null;
+    const data = JSON.parse(m[1]);
+    let prod: Record<string, unknown> | null = null;
+    const walk = (obj: unknown): void => {
+      if (prod || !obj || typeof obj !== "object") return;
+      if ((obj as Record<string, unknown>).addToCartForm !== undefined) { prod = obj as Record<string, unknown>; return; }
+      for (const k of Object.keys(obj as Record<string, unknown>)) walk((obj as Record<string, unknown>)[k]);
+    };
+    walk(data);
+    // TS can't track the closure assignment — read through a cast.
+    const node = prod as Record<string, unknown> | null;
+    if (!node) return null;
+    const price = (node.listPrice as { amount?: number } | undefined)?.amount ?? null;
+    const avail = String(node.availability ?? "").toUpperCase();
+    return {
+      tcin: sku,
+      name: typeof node.name === "string" ? node.name : null,
+      price: typeof price === "number" ? price : null,
+      imageUrl: ((node.images as Array<{ high?: string }> | undefined)?.[0]?.high) ?? null,
+      availability: avail === "AVAILABLE" ? "in-stock" : avail === "OUT_OF_STOCK" ? "out-of-stock" : "unknown",
+      url: `https://www.pokemoncenter.com/product/${sku}`,
+      source: "pokemoncenter",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   let body: { url?: unknown; tcin?: unknown };
   try {
@@ -200,6 +257,34 @@ export async function POST(req: NextRequest) {
   const input = typeof body.url === "string" ? body.url
     : typeof body.tcin === "string" || typeof body.tcin === "number" ? String(body.tcin)
     : "";
+  // Pokémon Center URLs/SKUs first — they never contain a Target TCIN.
+  if (/pokemoncenter\.com/i.test(input)) {
+    const sku = extractPcSku(input);
+    if (!sku) {
+      return NextResponse.json(
+        { error: "Could not find a Pokémon Center product code — paste a pokemoncenter.com product link (it contains /product/10-12345-678)." },
+        { status: 400 },
+      );
+    }
+    const viaPc = await viaPokemonCenter(sku);
+    if (viaPc && viaPc.name) return NextResponse.json({ ok: true, product: viaPc });
+    // Datacenter IP blocked (expected from Vercel) — hand back the SKU so the
+    // UI offers a manual add; the machine enriches the row on its first poll.
+    return NextResponse.json({
+      ok: true,
+      product: {
+        tcin: sku,
+        name: null,
+        price: null,
+        imageUrl: null,
+        availability: null,
+        url: `https://www.pokemoncenter.com/product/${sku}`,
+        source: "pokemoncenter-manual",
+      } satisfies Resolved,
+      note: "Pokémon Center blocks server lookups — type the name and price cap; the bot machine fills in the details on its next sync.",
+    });
+  }
+
   const tcin = extractTcin(input);
   if (!tcin) {
     return NextResponse.json(

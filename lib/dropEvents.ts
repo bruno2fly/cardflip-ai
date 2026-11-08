@@ -145,6 +145,24 @@ export const DROP_EVENTS: DropEvent[] = [
       { name: "UPC Day/Night — Best Buy $179.99 (invite-gated)", price: 179.99, url: "https://www.bestbuy.com/" },
     ],
   },
+  {
+    id: "pokemoncenter-30th-restock-watch",
+    title: "Pokémon Center — 30th Celebration restock watch",
+    retailer: "Pokémon Center",
+    type: "queue",
+    // Pokémon Center is the source for 30th Celebration stock; Target/Best Buy
+    // allocations land after PC drops. Queue launch, retail price.
+    dropsAt: "2026-11-14T11:00:00-05:00",
+    window: "Weekday late-morning ET launches + surprise restocks",
+    confidence: "expected",
+    note:
+      "Pokémon Center is the primary source for 30th Celebration products at full retail price. Drops go through a waiting-room queue — you get a spot, it hands you a session, checkout works normally. The new PC monitor (pc_monitor) watches these and pings the moment anything flips in stock. Paste any pokemoncenter.com product link on the Buy Bot page to add it.",
+    sourceUrl: "https://www.pokemoncenter.com/30th-celebration",
+    tcins: [],
+    externalProducts: [
+      { name: "30th Celebration hub — Pokémon Center", price: null, url: "https://www.pokemoncenter.com/30th-celebration" },
+    ],
+  },
 ];
 
 /**

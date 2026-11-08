@@ -14,6 +14,8 @@ export async function GET() {
   const [config, orders, bots] = await Promise.all([getBotConfig(), listBotOrders(100), listBots()]);
 
   let targets: Array<{
+    sku?: string | null;
+    retailer?: string | null;
     tcin: string;
     name: string;
     msrp: number | null;
@@ -29,8 +31,8 @@ export async function GET() {
     let rows: Record<string, unknown>[] | null = null;
     const q = await supabase
       .from("watchlist")
-      .select("product_name, target_tcin, msrp, auto_buy, image_url, target_url")
-      .not("target_tcin", "is", null)
+      .select("product_name, target_tcin, msrp, auto_buy, image_url, target_url, retailer, retailer_sku")
+      .or("target_tcin.not.is.null,retailer.not.is.null")
       .order("added_at", { ascending: false });
     let warning: string | null = null;
     if (q.error) {
@@ -46,7 +48,9 @@ export async function GET() {
     }
     targetsWarning = warning;
     targets = (rows ?? []).map((r) => ({
-      tcin: String(r.target_tcin),
+      tcin: r.target_tcin != null ? String(r.target_tcin) : String(r.retailer_sku ?? ""),
+      sku: (r.retailer_sku as string | null) ?? null,
+      retailer: (r.retailer as string | null) ?? "target",
       name: String(r.product_name),
       msrp: (r.msrp as number | null) ?? null,
       autoBuy: Boolean(r.auto_buy),

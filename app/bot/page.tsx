@@ -113,7 +113,7 @@ type Snapshot = {
   agentOnline: boolean;
   activeWindow: DropWindow | null;
   orders: BotOrder[];
-  targets: Target[];
+  targets: Array<Target & { retailer?: string | null; sku?: string | null }>;
   targetsWarning: string | null;
   bots?: Array<{ id: number; machine: string | null; heartbeat: string | null; online: boolean; profileReady: boolean; version: string | null }>;
 };
@@ -219,6 +219,7 @@ export default function BotPage() {
 
   /* ---- add-any-product flow state ---- */
   const [addInput, setAddInput] = useState("");
+  const [addRetailer, setAddRetailer] = useState<"target" | "pokemoncenter">("target");
   const [addBusy, setAddBusy] = useState(false);
   const [addPreview, setAddPreview] = useState<ResolvedProduct | null>(null);
   const [addNote, setAddNote] = useState<string | null>(null);
@@ -406,6 +407,8 @@ export default function BotPage() {
           autoBuy: addAutoBuy,
           imageUrl: addPreview.imageUrl,
           url: addPreview.url,
+          retailer: addPreview.source?.startsWith("pokemoncenter") ? "pokemoncenter" : "target",
+          sku: addPreview.source?.startsWith("pokemoncenter") ? addPreview.tcin : undefined,
         }),
       });
       const data = await res.json();
@@ -682,13 +685,30 @@ export default function BotPage() {
       {/* add any Target product */}
       <div className="space-y-2">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-500 flex items-center gap-1.5">
-          <PackagePlus size={13} /> Add Any Target Product
+          <PackagePlus size={13} /> Add Any Product
         </h2>
+        <div className="flex gap-1.5">
+          {(["target", "pokemoncenter"] as const).map(r => (
+            <button
+              key={r}
+              onClick={() => setAddRetailer(r)}
+              className={`text-[11px] font-semibold px-3 py-1 rounded-lg border transition-colors ${
+                addRetailer === r
+                  ? "bg-yellow-950/70 text-yellow-300 border-yellow-700"
+                  : "bg-gray-800 text-gray-400 border-gray-700 hover:text-gray-200"
+              }`}
+            >
+              {r === "target" ? "Target" : "Pokémon Center"}
+            </button>
+          ))}
+        </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-4 space-y-3">
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
-              placeholder="Paste any target.com product link (…/A-12345678) or a TCIN"
+              placeholder={addRetailer === "target"
+                ? "Paste any target.com product link (…/A-12345678) or a TCIN"
+                : "Paste a pokemoncenter.com product link (…/product/10-10242-101) or the code"}
               value={addInput}
               onChange={e => setAddInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && addInput.trim()) lookupProduct(); }}
@@ -776,7 +796,7 @@ export default function BotPage() {
                 </label>
                 <button
                   onClick={addToBot}
-                  disabled={adding || !addName.trim() || !(Number(addCap) > 0)}
+                  disabled={adding || !(Number(addCap) > 0) || (addPreview.source?.startsWith("pokemoncenter") !== true && !addName.trim())}
                   className="flex items-center gap-1.5 bg-green-950/60 hover:bg-green-900/60 disabled:opacity-50 text-green-300 border border-green-800/60 text-xs font-semibold px-4 py-2 rounded-lg transition-colors"
                 >
                   {adding ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />} Add to bot
@@ -993,10 +1013,15 @@ export default function BotPage() {
                   TCIN {t.tcin}{t.msrp != null ? ` · cap $${Number(t.msrp).toFixed(2)}` : ""}
                 </div>
               </div>
+              {t.retailer === "pokemoncenter" && (
+                <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/60">Pokémon Center</span>
+              )}
               <button
                 onClick={() => buyNow(t)}
-                disabled={busyTcin === t.tcin}
-                title="Queue a manual order — the bot buys this now"
+                disabled={busyTcin === t.tcin || t.retailer === "pokemoncenter"}
+                title={t.retailer === "pokemoncenter"
+                  ? "Pokémon Center auto-buy coming soon — this one is alerts-only for now"
+                  : "Queue a manual order — the bot buys this now"}
                 className="flex-shrink-0 flex items-center gap-1 bg-yellow-950/60 hover:bg-yellow-900/60 disabled:opacity-50 text-yellow-300 border border-yellow-800/60 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
               >
                 {busyTcin === t.tcin ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />} Buy now
