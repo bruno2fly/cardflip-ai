@@ -194,7 +194,7 @@ function LoginScreen() {
             {creating ? "Create account & sign in" : "Sign in"}
           </button>
 
-          <p className="text-gray-600 text-[11px] leading-relaxed text-center pt-1">
+          <p className="text-gray-500 text-[11px] leading-relaxed text-center pt-1">
             {creating
               ? "New accounts need the admin passcode. Each account gets its own private inventory & watchlist."
               : "Don't have an account? Switch to Create account (you'll need the admin passcode)."}
