@@ -2,7 +2,8 @@
 import { useState, useEffect } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+import Sidebar, { BrandMark } from "@/components/Sidebar";
+import TopBar from "@/components/TopBar";
 import { Loader2, LogIn, UserPlus } from "lucide-react";
 
 /**
@@ -54,7 +55,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <Sidebar userEmail={user?.email ?? null} onSignOut={signOut} />
-      <main className="flex-1 min-w-0 overflow-x-hidden p-4 pt-16 md:ml-64 md:p-6">{children}</main>
+      <main className="flex-1 min-w-0 overflow-x-hidden flex flex-col md:ml-[248px]">
+        <TopBar />
+        <div className="flex-1 w-full max-w-[1480px] mx-auto p-4 pt-16 md:p-10 md:pt-8">{children}</div>
+      </main>
     </div>
   );
 }
@@ -119,11 +123,11 @@ function LoginScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-gray-950">
       <div className="w-full max-w-sm">
-        <div className="flex items-center gap-3 mb-6 justify-center">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-lg font-bold text-gray-900">🃏</div>
+        <div className="flex items-center gap-3 mb-8 justify-center">
+          <BrandMark size={40} />
           <div>
-            <div className="font-bold text-white text-base leading-tight">CardFlip AI</div>
-            <div className="text-xs text-gray-500">Trading Intelligence</div>
+            <div className="font-medium text-gray-200 text-base leading-tight tracking-tight">CardFlip</div>
+            <div className="text-xs text-gray-500">Private terminal</div>
           </div>
         </div>
 

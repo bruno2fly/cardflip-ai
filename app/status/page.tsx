@@ -8,10 +8,10 @@ type Section = { title: string; rows: Row[] };
 type StatusResp = { generatedAt: string; sections: Section[] };
 
 const DOT: Record<Dot, { emoji: string; cls: string; label: string }> = {
-  green: { emoji: "🟢", cls: "text-green-400", label: "working" },
-  yellow: { emoji: "🟡", cls: "text-yellow-400", label: "degraded / partial" },
-  red: { emoji: "🔴", cls: "text-red-400", label: "broken / not configured" },
-  gray: { emoji: "⚪", cls: "text-gray-500", label: "not implemented" },
+  green: { emoji: "", cls: "text-green-400", label: "working" },
+  yellow: { emoji: "", cls: "text-yellow-400", label: "degraded / partial" },
+  red: { emoji: "", cls: "text-red-400", label: "broken / not configured" },
+  gray: { emoji: "", cls: "text-gray-500", label: "not implemented" },
 };
 
 type State =

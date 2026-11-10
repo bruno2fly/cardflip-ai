@@ -56,10 +56,10 @@ const typeColors: Record<ProductType, string> = {
 // Demand callout — the hero of the card, not an afterthought.
 // High-contrast blocks so the demand note reads before anything else.
 const demandBanner: Record<Hotness, { label: string; cls: string; noteCls: string }> = {
-  "🔥 Hot": { label: "🔥 HOT", cls: "bg-orange-500/15 border-orange-500/50", noteCls: "text-orange-200" },
-  "📈 Rising": { label: "📈 RISING", cls: "bg-green-500/15 border-green-500/50", noteCls: "text-green-200" },
-  "✅ Stable": { label: "✅ STABLE", cls: "bg-blue-500/10 border-blue-500/40", noteCls: "text-blue-200" },
-  "❄️ Cooling": { label: "❄️ COOLING", cls: "bg-cyan-500/10 border-cyan-500/40", noteCls: "text-cyan-200" },
+  "Hot": { label: "HOT", cls: "bg-orange-500/15 border-orange-500/50", noteCls: "text-orange-200" },
+  "Rising": { label: "RISING", cls: "bg-green-500/15 border-green-500/50", noteCls: "text-green-200" },
+  "Stable": { label: "STABLE", cls: "bg-blue-500/10 border-blue-500/40", noteCls: "text-blue-200" },
+  "Cooling": { label: "COOLING", cls: "bg-cyan-500/10 border-cyan-500/40", noteCls: "text-cyan-200" },
 };
 
 type MomentumBanner = { label: string; note: string; cls: string; noteCls: string; real: boolean };
@@ -76,7 +76,7 @@ function momentumBanner(trend: PriceTrend | undefined, product: SealedProduct): 
     const pctStr = `${pct > 0 ? "+" : ""}${pct.toFixed(0)}% / ${trend.windowDays}d`;
     const note = `Real trend from ${trend.dataPoints} tracked price points over ${trend.windowDays} days`;
     if (trend.direction === "RISING")
-      return { label: `📈 RISING (${pctStr})`, note, cls: "bg-green-500/15 border-green-500/50", noteCls: "text-green-200", real: true };
+      return { label: `RISING (${pctStr})`, note, cls: "bg-green-500/15 border-green-500/50", noteCls: "text-green-200", real: true };
     if (trend.direction === "FALLING")
       return { label: `📉 FALLING (${pctStr})`, note, cls: "bg-red-500/15 border-red-500/50", noteCls: "text-red-200", real: true };
     return { label: `➡️ STABLE (${pctStr})`, note, cls: "bg-blue-500/10 border-blue-500/40", noteCls: "text-blue-200", real: true };
@@ -291,7 +291,7 @@ export default function SealedTracker() {
             ebayQuery: `Pokemon ${name}`,
             imageUrl: tcgProductImg(Number(r.tcg_product_id)),
             tcgProductId: Number(r.tcg_product_id),
-            hotness: ratio >= 2 ? "🔥 Hot" : ratio >= 1.3 ? "📈 Rising" : "✅ Stable",
+            hotness: ratio >= 2 ? "Hot" : ratio >= 1.3 ? "Rising" : "Stable",
             notes: market != null
               ? `Found trending — ~$${market.toFixed(0)} vs $${msrp.toFixed(0)} assumed retail (${ratio.toFixed(1)}×)`
               : "Found trending — verify current pricing before buying",
@@ -493,7 +493,7 @@ export default function SealedTracker() {
                       title="Found automatically by the daily discovery scan and verified against real TCGPlayer data"
                       className="bg-teal-950/60 border border-teal-700/40 text-teal-400 text-[11px] font-medium px-2 py-0.5 rounded-full cursor-help"
                     >
-                      ✨ Auto-discovered
+                      Auto-discovered
                     </span>
                   )}
                 </div>
@@ -595,7 +595,7 @@ export default function SealedTracker() {
                   <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2.5">
                     <div className="text-gray-500 text-[11px] mb-0.5">
                       Current Market Price{" "}
-                      <span className="text-gray-700">
+                      <span className="text-gray-600">
                         (manual{raw === "" && seed != null ? " · seeded from demand note" : ""})
                       </span>
                     </div>
@@ -914,7 +914,7 @@ export default function SealedTracker() {
           <li>· Check eBay SOLD listings, not asking prices — that&apos;s what people actually pay.</li>
           <li>· ETBs and booster boxes appreciate when the print run ends — patience wins.</li>
           <li>· Shipping sealed product costs more — budget $8 for padded box + tracking.</li>
-          <li>· 🔥 Hot products: list within 48h of buying. 📈 Rising: hold 30–60 days. ✅ Stable: sell when you need cash.</li>
+          <li>· Hot products: list within 48h of buying. Rising: hold 30–60 days. Stable: sell when you need cash.</li>
         </ul>
       </div>
     </div>

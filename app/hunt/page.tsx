@@ -14,7 +14,7 @@ const DEFAULT_BANKROLL = 500; // used only for the capital-lock warning line
 // Price tier filter — matches the 3 tiers /api/hunt fetches (10 cards each)
 type Tier = "all" | "cheap" | "mid" | "premium";
 const TIER_FILTERS: { key: Tier; label: string; hint: string; inTier: (market: number) => boolean }[] = [
-  { key: "cheap", label: "🟢 Cheap", hint: "$25–$80", inTier: m => m <= 80 },
+  { key: "cheap", label: "Cheap", hint: "$25–$80", inTier: m => m <= 80 },
   { key: "mid", label: "🟡 Mid", hint: "$80–$200", inTier: m => m > 80 && m <= 200 },
   { key: "premium", label: "🔴 Premium", hint: "$200–$500", inTier: m => m > 200 },
   { key: "all", label: "All", hint: "", inTier: () => true },
@@ -315,7 +315,7 @@ export default function HuntList() {
                   {card.image ? (
                     <Image src={card.image} alt={card.name} fill className="object-contain" sizes="64px" />
                   ) : (
-                    <div className="flex items-center justify-center h-full text-2xl">🃏</div>
+                    <div className="flex items-center justify-center h-full text-2xl mono">CF</div>
                   )}
                 </div>
                 <div className="min-w-0 flex-1">

@@ -205,7 +205,7 @@ export default function LotAnalyzer() {
                 {result.best.image ? (
                   <Image src={result.best.image} alt={result.best.name} fill className="object-contain" sizes="56px" />
                 ) : (
-                  <div className="flex items-center justify-center h-full text-xl">🃏</div>
+                  <div className="flex items-center justify-center h-full text-xl">CF</div>
                 )}
               </div>
               <div>
@@ -238,7 +238,7 @@ export default function LotAnalyzer() {
                     {item.image ? (
                       <Image src={item.image} alt={item.name} fill className="object-contain" sizes="40px" />
                     ) : (
-                      <div className="flex items-center justify-center h-full text-sm">🃏</div>
+                      <div className="flex items-center justify-center h-full text-sm">CF</div>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">

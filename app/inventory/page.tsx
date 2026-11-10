@@ -39,7 +39,7 @@ function fromDb(row: DbCard): Card {
     condition: row.condition,
     bought: Number(row.bought),
     current: Number(row.current),
-    image: row.emoji || "🃏",
+    image: row.emoji || "CF",
     cardImage: row.card_image ?? undefined,
   };
 }
@@ -178,7 +178,7 @@ export default function Inventory() {
         condition: form.condition,
         bought: parseFloat(form.bought),
         current: parseFloat(form.current),
-        image: "🃏",
+        image: "CF",
         cardImage,
       };
       saveLocal([...cards, next]);
@@ -275,7 +275,7 @@ export default function Inventory() {
                         {r.images?.small ? (
                           <Image src={r.images.small} alt={r.name} fill className="object-contain" sizes="120px" />
                         ) : (
-                          <div className="flex items-center justify-center h-full text-2xl">🃏</div>
+                          <div className="flex items-center justify-center h-full text-2xl mono">CF</div>
                         )}
                       </div>
                       <div className="text-white text-xs font-medium leading-tight truncate">{r.name}</div>
@@ -301,7 +301,7 @@ export default function Inventory() {
                 {selected.images?.small ? (
                   <Image src={selected.images.small} alt={selected.name} fill className="object-contain" sizes="96px" />
                 ) : (
-                  <div className="flex items-center justify-center h-full text-3xl">🃏</div>
+                  <div className="flex items-center justify-center h-full text-3xl mono">CF</div>
                 )}
               </div>
               <div className="flex-1">

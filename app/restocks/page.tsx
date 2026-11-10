@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 🎯 Drops — the drops command center.
+ * Drops — the drops command center.
  *
  * This page is all about what's coming: the next expected drop with a live
  * countdown and a "get ready to buy" board of the exact products, plus predicted
@@ -97,11 +97,11 @@ const EVENT_LABEL: Record<DropWindow["pattern"]["eventType"], string> = {
 };
 
 const RETAILER_ICON: Record<string, string> = {
-  Target: "🎯",
-  Walmart: "🛒",
-  "Best Buy": "🔵",
-  "Pokemon Center": "⚪",
-  "Pokémon Center": "⚪",
+  Target: "T",
+  Walmart: "W",
+  "Best Buy": "BB",
+  "Pokemon Center": "PC",
+  "Pokémon Center": "PC",
 };
 
 const WINDOW_CONFIDENCE_CLASS: Record<DropWindow["pattern"]["confidence"], string> = {
@@ -117,7 +117,7 @@ const DROP_CONFIDENCE_CHIP: Record<DropEvent["confidence"], { label: string; cls
 };
 
 function retailerIcon(retailer: string): string {
-  return RETAILER_ICON[retailer] ?? "🏪";
+  return RETAILER_ICON[retailer] ?? "·";
 }
 
 function timeUntil(hoursAway: number): string {
@@ -154,7 +154,7 @@ function ExternalProductCard({ product }: { product: ExternalDropProduct }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-3">
       <div className="flex-1 min-w-0">
-        <div className="text-[10px] uppercase tracking-wide text-gray-600 mb-1">🛒 Walmart · drawing entry</div>
+        <div className="text-[10px] uppercase tracking-wide text-gray-600 mb-1">Walmart · drawing entry</div>
         <h4 className="text-sm font-semibold text-white leading-snug">{product.name}</h4>
       </div>
       <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2">
@@ -190,7 +190,7 @@ function ProductCard({
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-3">
       <div className="flex-1 min-w-0">
-        <div className="text-[10px] uppercase tracking-wide text-gray-600 mb-1">🎯 Target · TCIN {product.tcin}</div>
+        <div className="text-[10px] uppercase tracking-wide text-gray-600 mb-1">Target · TCIN {product.tcin}</div>
         <h4 className="text-sm font-semibold text-white leading-snug">{product.name}</h4>
       </div>
       <div className="bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-2">

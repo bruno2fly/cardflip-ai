@@ -217,7 +217,7 @@ export default function Grading() {
                       {r.images?.small ? (
                         <Image src={r.images.small} alt={r.name} fill className="object-contain" sizes="120px" />
                       ) : (
-                        <div className="flex items-center justify-center h-full text-2xl">🃏</div>
+                        <div className="flex items-center justify-center h-full text-2xl mono">CF</div>
                       )}
                     </div>
                     <div className="text-white text-xs font-medium leading-tight truncate">{r.name}</div>
@@ -242,7 +242,7 @@ export default function Grading() {
               {selected.images?.small ? (
                 <Image src={selected.images.small} alt={selected.name} fill className="object-contain" sizes="96px" />
               ) : (
-                <div className="flex items-center justify-center h-full text-3xl">🃏</div>
+                <div className="flex items-center justify-center h-full text-3xl mono">CF</div>
               )}
             </div>
             <div className="flex-1">

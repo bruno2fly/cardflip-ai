@@ -39,7 +39,7 @@ function productFromPayload(body: ProductPayload): SealedProduct | null {
     imageUrl: typeof body.imageUrl === "string" ? body.imageUrl : "",
     tcgProductId: typeof body.tcgProductId === "number" ? body.tcgProductId : undefined,
     targetTcin: typeof body.targetTcin === "number" ? body.targetTcin : undefined,
-    hotness: "✅ Stable",
+    hotness: "Stable",
     notes: "",
   };
 }

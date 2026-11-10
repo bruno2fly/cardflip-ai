@@ -74,15 +74,15 @@ export default function Guide() {
           <div className="text-gray-500 text-xs mb-3">You are here: <span className="text-yellow-400 font-semibold">Week 1 of your flip journey</span></div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="flex items-center gap-1.5 bg-yellow-400/10 border border-yellow-400/40 text-yellow-400 text-xs font-semibold px-3 py-1.5 rounded-full">
-              🌱 Learn the basics
+              Learn the basics
             </span>
             <ArrowRight size={14} className="text-gray-600" />
             <span className="flex items-center gap-1.5 bg-gray-800 border border-gray-700 text-gray-500 text-xs font-medium px-3 py-1.5 rounded-full">
-              💰 First flips
+              First flips
             </span>
             <ArrowRight size={14} className="text-gray-600" />
             <span className="flex items-center gap-1.5 bg-gray-800 border border-gray-700 text-gray-500 text-xs font-medium px-3 py-1.5 rounded-full">
-              📈 Scale up
+              Scale up
             </span>
           </div>
         </div>
@@ -91,7 +91,7 @@ export default function Guide() {
       {/* 2. Golden Rules */}
       <div className="bg-gray-900 border-2 border-yellow-400/50 rounded-xl p-6">
         <h2 className="text-yellow-400 font-bold text-lg mb-4 flex items-center gap-2">
-          ⭐ The Golden Rules
+          The Golden Rules
         </h2>
         <div className="space-y-3">
           {[
@@ -127,7 +127,7 @@ export default function Guide() {
           <p className="text-gray-500 text-xs">The app hides cards you can&apos;t afford.</p>
         </StepCard>
 
-        <StepCard n="02" title="Turn on Starter Mode 🌱">
+        <StepCard n="02" title="Turn on Starter Mode">
           <p>
             If you&apos;re new, keep <span className="text-green-400 font-semibold">Starter Mode ON</span>. It filters out expensive slow-moving
             cards and only shows fast, affordable flips. You&apos;ll see the toggle at the top of the Hunt List.
@@ -318,7 +318,7 @@ export default function Guide() {
           </div>
         </div>
         <p className="text-gray-600 text-xs mt-4 text-center">
-          Cash flow wins. Small, fast, boring flips build bankrolls. Good hunting. 🎯
+          Cash flow wins. Small, fast, boring flips build bankrolls. Good hunting.
         </p>
       </div>
     </div>

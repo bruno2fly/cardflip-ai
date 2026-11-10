@@ -104,7 +104,7 @@ export default function Scanner() {
             set: r.set_name ?? "",
             number: r.card_number ?? "",
             bought: Number(r.bought),
-            emoji: r.emoji || "🃏",
+            emoji: r.emoji || "CF",
             cardImage: r.card_image ?? undefined,
           })));
           return;
@@ -317,7 +317,7 @@ export default function Scanner() {
                   {hasData && (
                     <>
                       <p className="text-gray-400 text-xs mt-1.5 italic">
-                        🤖 {verdict === "buy" && `Strong flip: average sell price is ${marginPct!.toFixed(0)}% above your cost.`}
+                        {verdict === "buy" && `Strong flip: average sell price is ${marginPct!.toFixed(0)}% above your cost.`}
                         {verdict === "watch" && `Thin margin: average sell price is only ${marginPct!.toFixed(0)}% above your cost.`}
                         {verdict === "hold" && `Margin under ${WATCH_THRESHOLD}% — not worth flipping after fees.`}
                         {verdict === "loss" && `Average sell price is ${Math.abs(marginPct!).toFixed(0)}% below what you paid.`}

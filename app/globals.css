@@ -2,30 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
-* { box-sizing: border-box; }
-
-body {
-  background-color: #030712;
-  color: white;
-  font-variant-numeric: tabular-nums;
+:root {
+  --gold: #d7b87f;
+  --gold-ink: #1b150a;
+  --gold-line: rgba(215, 184, 127, 0.3);
+  --gold-soft: rgba(215, 184, 127, 0.08);
+  --up: #62c795;
+  --down: #e5706c;
 }
 
-@keyframes pulse-green {
+* { box-sizing: border-box; }
+
+html { color-scheme: dark; }
+
+body {
+  background-color: #0b0b0c;
+  color: #f3f1ec;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Champagne-gold focus ring, straight from the v0 design */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--gold-soft);
+  color: #f3f1ec;
+}
+
+/* Quiet dark scrollbars */
+* {
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  border: 2px solid #0b0b0c;
+}
+
+/* Numbers / codes everywhere the mono face is wanted */
+.tabular { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-geist-mono), ui-monospace, monospace; }
+
+/* Armed pulse — gold, slow, calm (replaces the old green throb) */
+@keyframes pulse-gold {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
 
-@keyframes glow-green {
-  0%, 100% { box-shadow: 0 0 8px rgba(74, 222, 128, 0.4); }
-  50% { box-shadow: 0 0 20px rgba(74, 222, 128, 0.8), 0 0 40px rgba(74, 222, 128, 0.3); }
+.pulse-dot {
+  animation: pulse-gold 2.4s ease-in-out infinite;
 }
 
-.pulse-dot {
-  animation: pulse-green 1.5s ease-in-out infinite;
+/* Buy-button glow — a restrained gold halo instead of the neon green */
+@keyframes glow-gold {
+  0%, 100% { box-shadow: 0 0 8px rgba(215, 184, 127, 0.25); }
+  50% { box-shadow: 0 0 18px rgba(215, 184, 127, 0.45); }
 }
 
 .glow-buy {
-  animation: glow-green 2s ease-in-out infinite;
+  animation: glow-gold 2.4s ease-in-out infinite;
 }
 
-.tabular { font-variant-numeric: tabular-nums; }
+/* Keep the old class names working (used in pages) */
+.pulse-green { animation: pulse-gold 2.4s ease-in-out infinite; }
+.glow-green { animation: glow-gold 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot, .pulse-green, .glow-buy, .glow-green { animation: none; }
+}

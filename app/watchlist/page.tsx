@@ -159,7 +159,7 @@ export default function WatchlistPage() {
         </div>
       ) : items.length === 0 ? (
         <div className="bg-gray-900 border border-gray-800 rounded-xl py-16 px-6 text-center">
-          <Star size={30} className="text-gray-700 mx-auto mb-3" />
+          <Star size={30} className="text-gray-600 mx-auto mb-3" />
           <h2 className="text-white font-semibold">Your watchlist is empty</h2>
           <p className="text-gray-500 text-sm mt-1">Add any real Pokémon TCG sealed product above to start monitoring it.</p>
         </div>

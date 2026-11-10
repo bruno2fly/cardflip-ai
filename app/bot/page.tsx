@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 🤖 Buy Bot — the DropBot mission control.
+ * Buy Bot — the DropBot mission control.
  *
  * The hub of the whole platform: everything about catching drops lives here.
  *   • Status strip   — both agents, master arm, NEXT DROP WINDOW countdown, order stats
@@ -599,8 +599,8 @@ export default function BotPage() {
                   <div className="text-[11px] text-gray-500 mt-0.5">
                     {b.machine ?? "no heartbeat yet"} · {timeAgo(b.heartbeat)}
                     {b.profileReady
-                      ? <span className="text-green-400"> · 💳 profile ready</span>
-                      : <span className="text-gray-600"> · 💳 no profile</span>}
+                      ? <span className="text-green-400"> · profile ready</span>
+                      : <span className="text-gray-600"> · no profile</span>}
                   </div>
                 </div>
               ))}
@@ -625,7 +625,7 @@ export default function BotPage() {
             disabled={arming}
             className={`mt-1.5 w-full flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg border transition-colors ${
               armed
-                ? "bg-green-950/60 text-green-300 border-green-800/60 hover:bg-green-900/60"
+                ? "bg-yellow-950/70 text-yellow-300 border-yellow-800/60 hover:bg-yellow-900/60"
                 : "bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
             }`}
           >
@@ -924,7 +924,7 @@ export default function BotPage() {
                   </div>
                   <div className="text-[11px] mt-0.5">
                     {live ? (
-                      <span className="text-green-400">⚡ fast polling every {w.intervalSec}s — active</span>
+                      <span className="text-green-400">fast polling every {w.intervalSec}s — active</span>
                     ) : past ? (
                       <span className="text-gray-600">past</span>
                     ) : (
@@ -1065,7 +1065,7 @@ export default function BotPage() {
                   {o.price != null && <span className="text-gray-400 font-normal">· ${Number(o.price).toFixed(2)}</span>}
                 </div>
                 <div className="text-[11px] text-gray-500 mt-0.5">
-                  {o.source === "auto" ? "🤖 auto-detected" : "👤 manual"} · {timeAgo(o.createdAt)}
+                  {o.source === "auto" ? "auto" : "manual"} · {timeAgo(o.createdAt)}
                   {o.error ? ` · ${o.error}` : ""}
                 </div>
               </div>
